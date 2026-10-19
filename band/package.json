@@ -1,0 +1,25 @@
+{
+  "name": "cgmband-band",
+  "version": "1.0.0",
+  "private": true,
+  "description": "小米手环 9 Pro 血糖显示 (Xiaomi Vela JS 快应用)，数据经 interconnect 由手机 com.fch.cgmband 推送",
+  "engines": {
+    "node": ">=22.7"
+  },
+  "scripts": {
+    "build": "aiot build",
+    "release": "aiot release",
+    "lint": "eslint --format codeframe --ext .ux,.js src/",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test test/*.test.js",
+    "assets": "python3 -I tools/gen_assets.py"
+  },
+  "devDependencies": {
+    "aiot-toolkit": "^2.0.5",
+    "babel-eslint": "^10.0.1",
+    "eslint": "^6.8.0",
+    "eslint-plugin-ux": "^0.0.4"
+  },
+  "browserslist": [
+    "chrome 65"
+  ]
+}

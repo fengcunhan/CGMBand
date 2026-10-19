@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">手环血糖</string>
+    <string name="listener_label">读取三诺 iCan 血糖通知</string>
+
+    <string name="no_reading">--</string>
+    <string name="waiting_detail">等待 iCan 通知刷新（约 3 分钟一次）</string>
+    <string name="time_unknown">时间未知</string>
+    <string name="sensor_disconnected">（传感器未连接）</string>
+    <string name="reading_detail">%1$s  测量于 %2$s  趋势 %3$s  变化 %4$s</string>
+
+    <string name="section_source">数据来源：三诺 iCan 通知</string>
+    <string name="section_band">小米手环</string>
+    <string name="section_keep_alive">后台保活</string>
+    <string name="section_log">日志</string>
+
+    <string name="listener_on">通知使用权：已开启</string>
+    <string name="listener_off">通知使用权：未开启（必须开启才能读取血糖）</string>
+    <string name="cgm_missing">未检测到 iCan App（com.sino.care）</string>
+
+    <string name="band_checking">正在查询手环…</string>
+    <string name="band_none">未找到已连接的手环。请确认小米运动健康已连上手环。</string>
+    <string name="band_status">手环：%1$s\n通信授权：%2$s\n通知授权（血糖提醒用）：%4$s\n手环应用：%3$s</string>
+    <string name="yes">是</string>
+    <string name="no">否</string>
+    <string name="unknown">未知</string>
+    <string name="granted">已授权</string>
+    <string name="not_granted">未授权</string>
+    <string name="installed">已安装</string>
+    <string name="not_installed">未安装</string>
+
+    <string name="btn_notification_access">开启通知使用权</string>
+    <string name="btn_refresh_band">刷新手环状态</string>
+    <string name="btn_request_permission">申请手环通信授权</string>
+    <string name="btn_launch_band_app">在手环上打开血糖应用</string>
+    <string name="btn_push_now">立即推送最新血糖</string>
+    <string name="btn_app_settings">打开本应用设置</string>
+    <string name="keep_alive_hint">HyperOS 会冻结后台应用。请在应用设置里开启「自启动」，省电策略选「无限制」，并在最近任务里锁定本应用。</string>
+
+    <string name="keep_alive_title">手环血糖 · 正在同步到手环</string>
+    <string name="keep_alive_channel">后台同步状态</string>
+    <string name="battery_ok">电池优化：已关闭（可后台运行）</string>
+    <string name="battery_restricted">电池优化：未关闭（后台可能被冻结）</string>
+    <string name="btn_battery">关闭电池优化</string>
+    <string name="section_alerts">高低血糖提醒（手环震动）</string>
+    <string name="alerts_enabled">启用手环提醒</string>
+    <string name="alerts_hint">进入区间时立即提醒；持续未恢复时，过低每 10 分钟、低每 20 分钟、高每 60 分钟再提醒一次。单位 mmol/L。仅作辅助，报警请以 iCan 为准。</string>
+    <string name="threshold_urgent_low">过低（低于）</string>
+    <string name="threshold_low">低（低于）</string>
+    <string name="threshold_high">高（高于）</string>
+    <string name="btn_save_alerts">保存提醒设置</string>
+    <string name="btn_test_alert">发送测试提醒到手环</string>
+    <string name="toast_alerts_saved">已保存</string>
+    <string name="toast_alerts_invalid">阈值需满足 0 &lt; 过低 &lt; 低 &lt; 高 ≤ 33.3</string>
+    <string name="toast_no_reading">还没有读到血糖，先打开一次 iCan</string>
+    <string name="toast_sent">已推送</string>
+    <string name="toast_send_failed">推送失败，看日志</string>
+    <string name="toast_permission_ok">授权成功</string>
+    <string name="toast_permission_failed">授权失败，看日志</string>
+    <string name="toast_launch_failed">打开失败，看日志</string>
+</resources>

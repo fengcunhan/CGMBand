@@ -1,0 +1,230 @@
+<template>
+  <div class="page">
+    <div class="link-row">
+      <div class="link-dot" style="background-color: {{view.linkColor}}; border-color: {{view.linkColor}}"></div>
+      <text class="link-text" style="color: {{view.linkColor}}">{{view.linkText}}</text>
+    </div>
+
+    <div class="main" if="{{view.hasData}}">
+      <div class="value-row">
+        <text class="value" style="color: {{view.valueColor}}; font-size: {{view.valueFontSize}}px">{{view.valueText}}</text>
+        <image
+          if="{{view.trendIcon}}"
+          class="trend"
+          src="{{view.trendIcon}}"
+          style="opacity: {{view.trendOpacity}}"
+        ></image>
+      </div>
+      <text class="unit">{{view.unitText}}</text>
+      <div class="meta-row">
+        <text if="{{view.deltaText}}" class="delta">{{view.deltaText}}</text>
+        <text class="ago">{{view.agoText}}</text>
+      </div>
+      <text if="{{view.warnText}}" class="warn">{{view.warnText}}</text>
+      <text if="{{view.sensorLost}}" class="hint">传感器未连接</text>
+    </div>
+    <div class="main" else>
+      <text class="waiting">等待手机数据…</text>
+    </div>
+
+    <div class="bottom-spacer"></div>
+  </div>
+</template>
+
+<script>
+import { REFRESH_INTERVAL_MS } from '../../lib/constants.js'
+import { initialLinkState } from '../../lib/link-state.js'
+import { attachLink } from '../../lib/link.js'
+import {
+  initialPageState,
+  withCachedReading,
+  withLink,
+  withLiveReading
+} from '../../lib/page-state.js'
+import { readingFromMessage } from '../../lib/protocol.js'
+import { loadReading, saveReading } from '../../lib/store.js'
+import { buildView } from '../../lib/view.js'
+
+export default {
+  // Only `view` is reactive. Page state lives in plain fields set in onInit
+  // and is replaced (never mutated) through the pure page-state functions.
+  private: {
+    view: buildView(null, Date.now(), initialLinkState())
+  },
+
+  onInit() {
+    this.destroyed = false
+    this.timerId = null
+    this.pageState = initialPageState()
+    this.channel = attachLink({
+      onMessage: (raw) => this.handleMessage(raw),
+      onLinkChange: (link) => this.applyState(withLink(this.pageState, link)),
+      onOpen: () => this.channel && this.channel.requestSync()
+    })
+    loadReading((cached) => this.applyState(withCachedReading(this.pageState, cached)))
+  },
+
+  onShow() {
+    this.refreshView()
+    this.startTicker()
+    this.channel.refreshState()
+    this.channel.requestSync()
+  },
+
+  onHide() {
+    this.stopTicker()
+  },
+
+  onDestroy() {
+    this.destroyed = true
+    this.stopTicker()
+    this.channel.detach()
+  },
+
+  handleMessage(raw) {
+    const reading = readingFromMessage(raw)
+    if (!reading) {
+      return
+    }
+    const result = withLiveReading(this.pageState, reading)
+    if (result.persist) {
+      saveReading(result.state.reading)
+    }
+    this.applyState(result.state)
+  },
+
+  applyState(nextState) {
+    if (this.destroyed || nextState === this.pageState) {
+      return
+    }
+    this.pageState = nextState
+    this.refreshView()
+  },
+
+  refreshView() {
+    if (this.destroyed) {
+      return
+    }
+    this.view = buildView(this.pageState.reading, Date.now(), this.pageState.link)
+  },
+
+  tick() {
+    this.refreshView()
+    this.channel.refreshState()
+  },
+
+  startTicker() {
+    this.stopTicker()
+    this.timerId = setInterval(() => this.tick(), REFRESH_INTERVAL_MS)
+  },
+
+  stopTicker() {
+    if (this.timerId !== null) {
+      clearInterval(this.timerId)
+      this.timerId = null
+    }
+  }
+}
+</script>
+
+<style>
+.page {
+  width: 336px;
+  height: 480px;
+  flex-direction: column;
+  align-items: center;
+  background-color: #000000;
+}
+
+.link-row {
+  height: 64px;
+  padding-top: 24px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+}
+
+.link-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 5px;
+  border-width: 1px;
+  margin-right: 8px;
+}
+
+.link-text {
+  font-size: 22px;
+}
+
+.main {
+  flex: 1;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.value-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+}
+
+.value {
+  font-size: 110px;
+  font-weight: bold;
+  lines: 1;
+}
+
+.trend {
+  width: 56px;
+  height: 56px;
+  margin-left: 8px;
+  object-fit: contain;
+}
+
+.unit {
+  font-size: 24px;
+  color: #9a9a9a;
+}
+
+.meta-row {
+  margin-top: 18px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+}
+
+.delta {
+  font-size: 30px;
+  font-weight: bold;
+  color: #ffffff;
+  margin-right: 14px;
+}
+
+.ago {
+  font-size: 24px;
+  color: #9a9a9a;
+}
+
+.warn {
+  margin-top: 16px;
+  font-size: 28px;
+  color: #ff9f0a;
+}
+
+.hint {
+  margin-top: 8px;
+  font-size: 22px;
+  color: #ff9f0a;
+}
+
+.waiting {
+  font-size: 30px;
+  color: #9a9a9a;
+}
+
+.bottom-spacer {
+  height: 64px;
+}
+</style>

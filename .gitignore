@@ -1,0 +1,21 @@
+# signing material — never commit
+keystore/
+band/sign/
+*.jks
+*.p12
+*.pem
+
+# android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+
+# band (vela)
+band/node_modules/
+band/build/
+band/dist/
+
+.DS_Store

@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:id="@+id/reading"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/no_reading"
+            android:textSize="44sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/reading_detail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            android:gravity="center"
+            android:textSize="14sp" />
+
+        <TextView
+            style="@style/SectionTitle"
+            android:text="@string/section_source" />
+
+        <TextView
+            android:id="@+id/listener_status"
+            style="@style/StatusLine" />
+
+        <Button
+            android:id="@+id/btn_notification_access"
+            style="@style/ActionButton"
+            android:text="@string/btn_notification_access" />
+
+        <TextView
+            style="@style/SectionTitle"
+            android:text="@string/section_band" />
+
+        <TextView
+            android:id="@+id/band_status"
+            style="@style/StatusLine" />
+
+        <Button
+            android:id="@+id/btn_refresh_band"
+            style="@style/ActionButton"
+            android:text="@string/btn_refresh_band" />
+
+        <Button
+            android:id="@+id/btn_request_permission"
+            style="@style/ActionButton"
+            android:text="@string/btn_request_permission" />
+
+        <Button
+            android:id="@+id/btn_launch_band_app"
+            style="@style/ActionButton"
+            android:text="@string/btn_launch_band_app" />
+
+        <Button
+            android:id="@+id/btn_push_now"
+            style="@style/ActionButton"
+            android:text="@string/btn_push_now" />
+
+        <TextView
+            style="@style/SectionTitle"
+            android:text="@string/section_alerts" />
+
+        <CheckBox
+            android:id="@+id/alerts_enabled"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/alerts_enabled" />
+
+        <TextView
+            style="@style/StatusLine"
+            android:text="@string/alerts_hint" />
+
+        <LinearLayout style="@style/ThresholdRow">
+            <TextView
+                style="@style/ThresholdLabel"
+                android:text="@string/threshold_urgent_low" />
+            <EditText
+                android:id="@+id/threshold_urgent_low"
+                style="@style/ThresholdInput" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/ThresholdRow">
+            <TextView
+                style="@style/ThresholdLabel"
+                android:text="@string/threshold_low" />
+            <EditText
+                android:id="@+id/threshold_low"
+                style="@style/ThresholdInput" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/ThresholdRow">
+            <TextView
+                style="@style/ThresholdLabel"
+                android:text="@string/threshold_high" />
+            <EditText
+                android:id="@+id/threshold_high"
+                style="@style/ThresholdInput" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btn_save_alerts"
+            style="@style/ActionButton"
+            android:text="@string/btn_save_alerts" />
+
+        <Button
+            android:id="@+id/btn_test_alert"
+            style="@style/ActionButton"
+            android:text="@string/btn_test_alert" />
+
+        <TextView
+            style="@style/SectionTitle"
+            android:text="@string/section_keep_alive" />
+
+        <TextView
+            style="@style/StatusLine"
+            android:text="@string/keep_alive_hint" />
+
+        <TextView
+            android:id="@+id/battery_status"
+            style="@style/StatusLine" />
+
+        <Button
+            android:id="@+id/btn_battery"
+            style="@style/ActionButton"
+            android:text="@string/btn_battery" />
+
+        <Button
+            android:id="@+id/btn_app_settings"
+            style="@style/ActionButton"
+            android:text="@string/btn_app_settings" />
+
+        <TextView
+            style="@style/SectionTitle"
+            android:text="@string/section_log" />
+
+        <TextView
+            android:id="@+id/log"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textIsSelectable="true"
+            android:textSize="12sp" />
+    </LinearLayout>
+</ScrollView>
