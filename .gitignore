@@ -19,3 +19,6 @@ band/build/
 band/dist/
 
 .DS_Store
+
+# release artifacts
+out/

@@ -1,118 +1,275 @@
-# CGMBand — 三诺 iCan 血糖实时显示到小米手环 9 Pro
+# 手环血糖（CGMBand）
+
+把**三诺 iCan 动态血糖仪**的实时血糖，显示到手机上的曲线看板和**小米手环 9 Pro** 上，并在血糖过高或过低时让手环震动提醒。
+
+> ⚠️ 本项目只是方便查看的辅助工具，不是医疗器械。低血糖等报警请继续以三诺 iCan 官方 App 为准。
+
+## 它能做什么
+
+- **手机 App「手环血糖」**：
+  - 最新血糖和趋势箭头，按目标范围着色；
+  - 4/8/12/24 小时曲线，可叠加对比昨日；
+  - 达标时间、最大波动、最高 / 最低血糖。
+- **手环应用「血糖」**：抬腕打开就能看到当前血糖、趋势箭头和几分钟前测的；数据过期或传感器断开时会变灰。
+- **高低血糖提醒**：血糖越界时手环弹通知并震动。持续没恢复会按间隔重复提醒，手环上的应用不用开着。
+
+它的工作方式：
 
 ```
-三诺传感器 ──BLE──> 官方 iCan App (com.sino.care，不改动，报警/云同步照常)
-                          │ 常驻通知（约 3 分钟刷新一次）
+三诺传感器 ──蓝牙──> 三诺 iCan 官方 App（照常使用，报警、云同步都不受影响）
+                          │ 读取它通知栏里的实时血糖（约 3 分钟一次）
                           ▼
-              android/  手机端 App (com.fch.cgmband)
-                          │ NotificationListenerService 读通知 → 算趋势 → JSON
-                          │ 小米穿戴 SDK (xms-wearable-lib 1.4)，经小米运动健康转发
-                          ▼
-              band/     手环 Vela JS 应用 (同包名、同签名)
+                 手机 App「手环血糖」──经由小米运动健康──> 手环应用「血糖」
 ```
 
-> 手环上的显示只作方便查看。低血糖报警继续依赖官方 iCan App。
+---
 
-## 目录
+## 使用教程
+
+### 你需要准备
+
+| 项目 | 要求 | 已验证的版本 |
+|---|---|---|
+| 手机 | 安卓手机 | 小米 13 Ultra，HyperOS 3（Android 16） |
+| 三诺 iCan | **国内版**官方 App，已绑定传感器并正常监测 | 2.5.1 |
+| 手环 | 小米手环 9 Pro，已在「小米运动健康」里配对 | 小米运动健康 3.59.1 |
+| 电脑 | macOS 或 Windows，加一根能传数据的 USB 线 | macOS（Apple 芯片） |
+| 电脑工具 | [adb（Android platform-tools）](https://developer.android.com/tools/releases/platform-tools)，Python 3 | — |
+| 安装包 | 手机安装包 `CGMBand-phone.apk`，手环安装包 `com.fch.cgmband.release.1.0.0.rpk` | — |
+
+> **两个安装包必须出自同一次构建（同一个签名）**，否则手机和手环之间连不上。
+> 可以向维护者要成对的安装包，也可以按文末「开发者说明」自己构建，产物在 `out/` 目录。
+
+整个流程大约 20 分钟，按顺序做完下面 6 步即可。
+
+### 第一步：打开 USB 调试，连接电脑
+
+1. 手机进入「设置 → 我的设备 → 全部参数与信息」，连续点「OS 版本」7 次，开启开发者模式。
+2. 回到「设置 → 更多设置 → 开发者选项」，打开「**USB 调试**」。小米手机建议同时打开「**USB 安装**」。
+3. 用数据线连接电脑。手机弹出「允许 USB 调试吗？」时，点允许。
+4. 在电脑终端运行 `adb devices`，能看到一行 `xxxxxxxx  device` 就说明连上了。
+
+### 第二步：获取手环的 AuthKey
+
+AstroBox 需要用 AuthKey 才能连接你的手环。AuthKey 就是小米运动健康和手环之间的配对密钥。
+
+1. 打开「小米运动健康」，在「设备」页下拉同步一次。
+2. 进入「我的 → 关于」，**快速连点小米运动健康的图标 10 次以上**，弹窗里点「确定」，这一步是打开调试日志。
+3. 回到「设备」页，再同步一次。
+4. 在本项目目录下运行：
+
+   ```bash
+   python3 tools/extract_authkey.py --copy
+   ```
+
+   正常的输出类似下面这样，AuthKey 是一串 32 位的字母数字，macOS 上会自动复制到剪贴板：
+
+   ```
+   小米手环9 Pro	0123456789abcdef0123456789abcdef
+   ```
+
+> 🔒 **AuthKey 相当于手环的钥匙，不要发给别人。**
+> AstroBox 里也有「登录小米账号导入设备」的入口，**不建议使用**，因为那等于把小米账号交给第三方工具。
+
+### 第三步：用 AstroBox 连接手环
+
+[AstroBox](https://astrobox.online) 是开源的小米穿戴第三方工具，用来把应用装到手环上。小米官方的安装渠道只对合作开发者开放，所以这里用它。
+
+1. **下载安装 AstroBox**：从 GitHub 的 [AstralSightStudios/AstroBox-NG 发布页](https://github.com/AstralSightStudios/AstroBox-NG/releases) 下载对应系统的安装包。
+   Apple 芯片的 Mac 选 `aarch64.dmg`，Intel Mac 选 `x64.dmg`。
+   - macOS 版没有经过苹果公证。如果双击打不开，在「应用程序」里右键点 AstroBox，选「打开」。
+   - 首次启动时允许它使用蓝牙。如果它要求登录，那是 AstroBox 自己的账号，用邮箱注册即可，**不要登录小米账号**。
+2. **让手环进入配对模式**：在手环上进入「设置 → 系统操作 → 连接新手机」。
+   这一步只是临时允许新设备连接，**不会清除手环数据**。如果看到「恢复出厂设置」或「解除绑定」，不要点，退回去重新找。
+3. **连接**：在 AstroBox 里打开「设备」，搜索设备，点选「小米手环9 Pro」。
+   在「设备密钥」处粘贴第二步拿到的 AuthKey，再点右侧的小飞机图标。
+   连接成功后，AstroBox 里会显示手环的信息。
+
+### 第四步：在手环上安装「血糖」应用
+
+1. 在 AstroBox 里点「队列」图标（在「设置」上方，像一个列表）。
+2. 点右上角，资源类型选「**快应用**」，然后选择 `com.fch.cgmband.release.1.0.0.rpk`。
+   如果文件选择框停在「最近」，点左上角的三条横线，切到下载目录或其他目录去找。
+3. 开始安装，等待提示安装成功。
+4. **关掉 AstroBox**，让手环退出配对页面，等它自动连回小米运动健康，通常不到一分钟。
+   如果一直连不上，把手机蓝牙关掉再打开。
+5. 在手环上从表盘底部上滑，打开应用列表，应该能看到「血糖」。
+
+### 第五步：在手机上安装「手环血糖」App
+
+任选一种方式：
+
+- **用电脑安装**：运行 `adb install -r out/CGMBand-phone.apk`。
+  如果提示 `INSTALL_FAILED_USER_RESTRICTED`，到开发者选项里打开「USB 安装」后重试。
+- **在手机上安装**：把 APK 文件传到手机上，点击安装，按提示允许「安装未知来源应用」。
+
+### 第六步：首次设置（很重要，少一步都可能收不到数据）
+
+打开「手环血糖」，先点「允许」通知权限，然后按顺序完成下面几项：
+
+1. **通知使用权**：主页顶部有一条橙色提示，点它，或者点右上角齿轮进入设置。在「数据来源 → 通知使用权」里找到「手环血糖」并打开。
+   App 是从 iCan 的通知里读血糖的，这一项必须开。
+2. **后台运行**：HyperOS 会冻结后台应用，冻结后血糖可能延迟二十多分钟才推送。在设置的「后台运行」里：
+   - 「电池优化」点进去，选择允许；
+   - 「自启动与省电策略」点进去，打开「自启动」，省电策略选「**无限制**」。
+3. **锁定后台**：在手机的最近任务里，下拉「手环血糖」的卡片把它锁定。
+4. **手环授权**：在设置的「小米手环」里点「申请手环授权」，完成后手环那一行应显示绿色的「正常」。
+5. **测试提醒**：在设置的「高低血糖提醒」里点「发送测试提醒」，手环应该震动并显示「血糖提醒测试」。
+6. **打开手环应用**：点「在手环上打开血糖」，手环上应该能看到当前血糖。
+
+设置完成后回到主页，能看到最新血糖，右侧显示「手环 已同步 HH:mm」，就说明全部打通了。🎉
+
+---
+
+## 日常使用
+
+### 手机主页
+
+- **血糖数值的颜色**：
+  - 绿色：在目标范围内；橙色：偏高；红色：偏低。
+  - 灰色：数据超过 10 分钟没更新、测量时间未知、或传感器未连接。灰色的数值**不代表当前血糖**。
+- **右上角两个状态**：
+  - 「手环 已同步 HH:mm」：最近一次成功推送到手环的时间。
+  - 「传感器 正常 / 未连接」：来自 iCan 的状态。
+- **曲线**：
+  - 可以切换 4、8、12、24 小时；黑线是今天，灰线是昨天同一时段。
+  - 浅色带是目标范围，默认 3.9–7.8 mmol/L，和 iCan 一致。曲线超出上限的部分画成橙色，低于下限的部分画成红色。
+- **统计**：达标时间、最大波动、最高 / 最低血糖，都按当前选中的时间段计算。
+- 曲线数据保存在手机本地，保留 14 天。**iCan 里原有的历史数据读不到**，所以曲线从安装本 App 时开始积累，「昨日」那条线第二天才会出现。
+
+### 手环上的「血糖」
+
+- 从表盘底部上滑打开应用列表，点「血糖」。
+- **建议把它放到应用列表第一位**：在小米运动健康里进入「设备 → 系统设置 → 应用顺序管理」，把「血糖」拖到最上面。之后上滑一下、点一下就能看到。
+- 每次打开都会主动向手机要最新值，所以显示的总是最新数据。超过 10 分钟没有新数据时会变灰，并显示「数据已过期」。
+
+### 高低血糖提醒
+
+| 区间 | 默认阈值（mmol/L） | 一直没恢复时的重复间隔 |
+|---|---|---|
+| 过低 | < 3.1，或 iCan 显示 LO | 10 分钟 |
+| 低 | < 3.9 | 20 分钟 |
+| 高 | > 13.9，或 iCan 显示 HI | 60 分钟 |
+
+- 进入某个区间时立即提醒；从「低」恶化到「过低」也会立即提醒。
+- 超过 15 分钟的旧读数不会触发提醒。
+- 阈值和开关在「设置 → 高低血糖提醒」里修改。
+
+### 通知栏的「手环血糖 · 正在同步到手环」
+
+这是让 App 在后台持续工作的常驻通知，上面也会显示最新血糖。**请不要关闭它**，关掉后系统可能冻结 App。
+
+---
+
+## 常见问题
+
+**主页一直显示「等待 iCan 数据」**
+- 确认「设置 → 数据来源 → 通知使用权」是「已开启」。
+- 确认 iCan 正在监测：手机通知栏里应该有一条 iCan 的常驻通知，上面显示着血糖。
+- 确认已开启自启动（见第六步）。
+
+**手环或主页显示「数据已过期」，或者推送明显延迟**
+- 多半是 App 被系统冻结了。检查第六步第 2、3 项是否都已完成。
+- 重新安装 App 后，HyperOS 可能会把「自启动」关掉，需要重新打开。
+
+**收不到高低血糖提醒**
+- 先点「发送测试提醒」试一下。
+- 收不到的话，点「申请手环授权」，确认手环那一行显示「正常」。
+- 检查手环是否开了勿扰模式。
+
+**手环上的「血糖」打不开，或者手机上显示「手环应用未安装」**
+- 用 AstroBox 重新安装手环应用（第三、四步）。
+- 确认手机 App 和手环应用是同一次构建的安装包。
+
+**手环显示「时间未知」，或者 iCan 升级后主页不再更新**
+- iCan 新版本可能改了通知的格式，需要适配，请把 iCan 的版本号反馈给维护者。
+
+**能不能把血糖做到表盘上？**
+- 目前做不到。手环上的应用退到后台就会被系统停止，表盘也没有接收手机数据的途径，表盘上只能显示旧值，反而容易误导。
+- 替代办法是把「血糖」放到应用列表第一位，再配合高低血糖震动提醒。
+
+**换手机或卸载重装会怎样？**
+- 曲线历史保存在手机本地，卸载后会丢失。
+- 手环上的应用不需要重装，前提是新装的手机 App 来自同一个签名。
+
+## 隐私与安全
+
+- 血糖数据只在你的手机和手环之间传递，**不会上传到任何服务器**，也不参与系统备份和换机迁移。
+- App 虽然有读取通知的权限，但只解析三诺 iCan 的那一条常驻通知，其他应用的通知一律不读。
+- AuthKey、签名文件（`keystore/`）都是私密信息，已经被 git 忽略，请不要分享。
+
+---
+
+## 开发者说明
+
+### 目录结构
 
 | 路径 | 内容 |
 |---|---|
-| `android/` | 手机端 Kotlin 工程。`core/` 是纯逻辑（有 JVM 单测），其余是 Android 组件 |
-| `band/` | 手环端 Vela JS 工程（aiot-toolkit 2.x） |
-| `keystore/` | 手机端与手环端**共用**的签名（gitignore，丢了就得两端一起重签重装） |
+| `android/` | 手机端 Kotlin 工程。`core/` 是纯逻辑，有 JVM 单元测试；其余是 Android 组件 |
+| `band/` | 手环端 Vela JS 快应用（aiot-toolkit 2.x），有 Node 单元测试 |
+| `tools/` | `create_keystore.sh` 生成签名，`build_release.sh` 一键构建，`extract_authkey.py` 提取 AuthKey |
+| `keystore/` | 两端共用的签名和 AuthKey。被 git 忽略，丢了就得两端一起重新签名、重新安装 |
 
-## 关键约束
+### 构建
 
-- **包名 + 签名必须两端一致**，否则 interconnect 直接拒绝。包名 `com.fch.cgmband`；
-  签名在 `keystore/cgmband.jks`，手环端用的 pem 由它导出到 `band/sign/{debug,release}/`。
-- 手环 9 / 9 Pro **不支持联网**，数据只能由手机通过 interconnect 推送。
-- 读数来自 iCan 通知的自定义布局（RemoteViews），按 view 资源名取值：
-  v2.5.x 为 `tv_cgm_value` / `tv_cgm_unit` / `tv_cgm_time`，v2.4.x 为 `new_blood_tv` / `new_blood_unit_tv`。
-  iCan 升级后若读不到数，先用 `uiautomator dump` 看通知里的新 id，再改 `NotificationParser`。
-- 趋势箭头由手机端按最近两次读数自行计算（1/2/3 mg/dL/min 阈值），不识别 iCan 的箭头图标。
+```bash
+tools/create_keystore.sh     # 只需运行一次：生成 keystore/ 和 band/sign/（不会覆盖已有签名）
+tools/build_release.sh       # 两端单元测试 + 构建，产物输出到 out/
+```
 
-## 消息协议（JSON 字符串）
+依赖：JDK 17、Android SDK 36、Node 18 及以上、OpenSSL。
 
-手机 → 手环：
+开发时可以直接构建 debug 版：
+
+```bash
+cd android && ./gradlew :app:testDebugUnitTest :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+### 关键约束
+
+- **包名和签名必须两端一致**（`com.fch.cgmband`），否则小米的设备通信接口（interconnect）会直接拒绝连接。
+- 手环 9 / 9 Pro 不能联网，手环应用只在前台运行时才能收到消息。所以手机会缓存最新读数，手环打开应用时会发 `sync` 请求来取。
+- **读数来源**：读取 iCan 通知的自定义布局（RemoteViews），按控件的资源名取值。
+  - v2.5.x 的控件名是 `tv_cgm_value` / `tv_cgm_unit` / `tv_cgm_time`；
+  - v2.4.x 是 `new_blood_tv` / `new_blood_unit_tv`。
+  - iCan 升级后如果读不到数，先用 `uiautomator dump` 查看通知里的新控件名，再修改 `NotificationParser`。
+- **测量时间**由通知上的 `HH:mm`，结合通知的发布时间（`sbn.postTime`）推算出日期。推算不出来时为 `null`，**绝不拿"现在"兜底**，避免把旧值显示成新值。
+- **趋势箭头**由手机端根据最近两次读数自己计算（阈值是每分钟 1 / 2 / 3 mg/dL），不去识别 iCan 的箭头图标。
+- **HyperOS 后台限制**：
+  - 不开自启动，系统会拒绝绑定通知监听服务，日志里会出现 `AutoStartManagerService: Reject service`。
+  - 冻结器（`dumpsys greezer`）会让通知回调积压。为此 App 带了一个前台服务 `KeepAliveService`，并且需要加入电池优化白名单，前台服务才能在后台被拉起。
+
+### 消息协议（JSON 字符串）
+
+手机发给手环：
 
 ```json
 {"type":"bg","value":"6.6","unit":"mmol/L","mmol":6.6,"time":"16:33",
  "ts":1792398000000,"trend":"FLAT","delta":0.1,"connected":true}
 ```
 
-- `value`：iCan 显示的原文（可能是 `LO`/`HI`）；`mmol`：换算后的数值，非数字时为 `null`
-- `ts`：**测量时间**。由 `time` 结合 iCan 通知的发布时间（`sbn.postTime`）推算，可跨零点前后各一天；
-  推不出来（缺时间控件、与发布时间相差超过 6 小时）时为 `null`。**绝不用"现在"兜底**——否则旧值会显示成新值。
-  手环把 `ts == null` 显示为"时间未知"并置灰，超过 10 分钟显示"数据已过期"
-- `trend`：`DOUBLE_UP | SINGLE_UP | FORTY_FIVE_UP | FLAT | FORTY_FIVE_DOWN | SINGLE_DOWN | DOUBLE_DOWN | NONE`
-- `delta`：与上一次读数之差（mmol/L，一位小数），无法计算时为 `null`
-- `connected`：iCan 通知里出现"未连接/断开"、或 iCan 常驻通知消失时为 `false`（重发上一条读数，`ts` 不变），手环置灰
-- 更旧的读数（`ts` 倒退）不会覆盖新的；最新值是 LO/HI 时 `trend=NONE`、`delta=null`
+| 字段 | 含义 |
+|---|---|
+| `value` | iCan 显示的原文，可能是 `LO` / `HI` |
+| `mmol` | 换算成 mmol/L 的数值；不是数字时为 `null` |
+| `ts` | 测量时间（毫秒时间戳），推不出来时为 `null`，手环据此判断「几分钟前」和是否过期 |
+| `trend` | 趋势：`DOUBLE_UP` / `SINGLE_UP` / `FORTY_FIVE_UP` / `FLAT` / `FORTY_FIVE_DOWN` / `SINGLE_DOWN` / `DOUBLE_DOWN` / `NONE` |
+| `delta` | 与上一次读数的差值（mmol/L）；没有上一次时为 `null` |
+| `connected` | 传感器是否连接；为 `false` 时重发上一条读数，`ts` 保持不变 |
 
-手环 → 手机：`{"type":"sync"}`，手机回发最近一条读数（手环应用打开 / 重连时发送）。
+- 时间更早的读数不会覆盖更新的读数。
+- 最新值是 LO / HI 时，`trend` 为 `NONE`，`delta` 为 `null`。
 
-## 构建
+手环发给手机：`{"type":"sync"}`，表示要手机重发最新一条读数。
 
-```bash
-# 手机端（需要 JDK 17 + Android SDK 36）
-cd android && ./gradlew :app:testDebugUnitTest :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+### 排错
 
-# 手环端（aiot 每次构建会清空 dist/）
-cd band && npm install && npm test && npx aiot build && npx aiot release   # 产物在 band/dist/
-```
-
-## 手机端首次设置（HyperOS）
-
-HyperOS 的后台冻结器（`dumpsys greezer`）会冻结后台应用，冻结期间通知回调全部积压（实测一次延迟 22 分钟）。
-因此 App 带一个前台服务 `KeepAliveService`（通知栏常驻一条低优先级通知，显示最新血糖），
-并且需要以下设置，缺一不可：
-
-
-1. 给本应用开**自启动**，否则系统会拒绝绑定通知监听服务（日志里是 `AutoStartManagerService: Reject service`）：
-   设置里手动开，或 `adb shell cmd appops set com.fch.cgmband 10008 allow`。
-   **每次 `adb install -r` 重装后 HyperOS 会把它重置为 ignore，需要重新打开。**
-2. 开**通知使用权**：App 里点「开启通知使用权」，或
-   `adb shell cmd notification allow_listener com.fch.cgmband/com.fch.cgmband.CgmNotificationListener`
-3. 省电策略设为「无限制」（等价于电池优化白名单，`dumpsys deviceidle whitelist` 里应有 `com.fch.cgmband`）。
-   有了它，前台服务才能在后台被通知监听服务拉起
-4. 允许通知（前台服务的常驻通知要用）
-5. 手环应用装好后，App 里点「申请手环通信授权」→「在手环上打开血糖应用」
-
-验证：熄屏 7 分钟，`adb logcat -s CgmBand` 里"已推送到手环"应每 3 分钟出现一次，
-`adb shell dumpsys greezer | grep 10294`（换成本应用 uid）不应有新的 `FZ` 记录。
-
-## 高低血糖提醒
-
-手机端在每条新读数上跑 `core/AlertPolicy`，越界时用小米穿戴 SDK 的 `NotifyApi.sendNotify` 给手环推一条系统通知（会震动，与手环应用是否打开无关）。
-
-- 默认阈值（mmol/L）：过低 < 3.1、低 < 3.9、高 > 13.9，可在 App 里改；`LO` 按过低、`HI` 按高处理
-- 进入区间或恶化（低 → 过低）立即提醒；持续未恢复时，过低 10 分钟、低 20 分钟、高 60 分钟重复一次；从过低好转到低不提醒
-- 无测量时间或超过 15 分钟的读数不触发提醒
-- 需要手环授予 `NOTIFY` 权限（App 里「申请手环通信授权」会一并申请），用「发送测试提醒到手环」验证
-- 仅作辅助，报警以 iCan 为准
-
-**为什么没有做血糖表盘**：手环 9 Pro 支持社区逆向的 Lua 表盘（时间/日期/步数/天气可用 `dataman` 读），
-但 Vela 快应用退到后台即被停止（仅音频/上传下载/定位可后台运行），表盘也没有接收手机数据的接口，
-因此表盘拿不到实时血糖。快捷查看方式：小米运动健康 → 设备 → 系统设置 → 应用顺序管理，把「血糖」拖到第一位。
-
-## 安装手环应用（rpk）
-
-官方侧载需要小米商务提供的 Debug 版小米运动健康，个人拿不到，所以用社区工具 [AstroBox](https://astrobox.online)（开源，支持手环 9 Pro）：
-
-1. **拿 AuthKey**：小米运动健康 →「设备」页同步 →「我的 → 关于」快速点图标 10 次以上 → 确定（打开调试日志）→ 再同步一次。
-   AuthKey 在 `/sdcard/Android/data/com.mi.health/files/log/XiaomiFit.main.log`（及 `.bak.1`）里：
-   是与 `"productName": "小米手环9 Pro"` 同一个 JSON 对象中的 `"token"`（32 位 hex），**不是**名为 `authKey` 的字段（那个是 null）。
-   取出后存在 `keystore/band_authkey.txt`（gitignore）。
-   **不要**用 AstroBox 的"登录小米账号导入设备"——那要把小米账号交给第三方。
-2. 手环上：「设置 → 系统操作 → 连接新手机」，进入配对模式
-3. AstroBox（macOS 版来自 GitHub `AstralSightStudios/AstroBox-NG`，ad-hoc 签名，需右键打开）：
-   搜索设备 → 填 AuthKey 连接 → 队列 → 快应用 → 选择 `band/dist/` 下的 release rpk 安装
-4. 装完后退出配对模式，手环会用同一个 AuthKey 回连小米运动健康（不需要解绑）
-
-## 排错
-
-- 手机端日志：`adb logcat -s CgmBand CgmExtractor`，App 首页底部也有同样的事件日志
-- `AppNotInstalledException`：手环上还没装应用，或包名不一致
-- `SignatureVerifyFailedException`：rpk 和 APK 签名不同，检查 `band/sign/` 是否由 `keystore/cgmband.jks` 导出
-- 通知监听不工作：看 `adb shell dumpsys notification` 的 "Live notification listeners" 里有没有 `com.fch.cgmband`
+| 现象 | 处理 |
+|---|---|
+| 想看手机端日志 | `adb logcat -s CgmBand CgmExtractor`；App 的「设置 → 诊断 → 运行日志」里也能看 |
+| `AppNotInstalledException` | 手环上没装应用，或者两端包名不一致 |
+| `SignatureVerifyFailedException` | rpk 和 APK 的签名不一致 |
+| 通知监听不工作 | 看 `adb shell dumpsys notification` 的 "Live notification listeners" 里有没有 `com.fch.cgmband` |
+| 怀疑被系统冻结 | `adb shell dumpsys greezer \| grep <uid>`，不应出现新的 `FZ` 记录 |
