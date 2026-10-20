@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { STORAGE_KEY } from '../src/lib/constants.js'
+import { HISTORY_STORAGE_KEY, STORAGE_KEY } from '../src/lib/constants.js'
 import { createStore } from '../src/lib/store-core.js'
 
 function memoryStorage() {
@@ -81,4 +81,18 @@ test('storage failures and exceptions yield null exactly once', (t) => {
   }
   assert.deepEqual(load(createStore(throwing)), { result: null, calls: 1 })
   assert.doesNotThrow(() => createStore(throwing).saveReading(READING))
+})
+
+test('history slot round-trips under its own key', () => {
+  const storage = memoryStorage()
+  const store = createStore(storage)
+  const history = { ref: 1000, points: [[3, 62], [0, 61]], range: [4.4, 10] }
+  store.saveHistory(history)
+  assert.equal(typeof storage.data[HISTORY_STORAGE_KEY], 'string')
+  assert.equal(storage.data[STORAGE_KEY], undefined)
+  let loaded
+  store.loadHistory((value) => {
+    loaded = value
+  })
+  assert.deepEqual(loaded, history)
 })

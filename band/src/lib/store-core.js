@@ -1,45 +1,58 @@
-// Persistence of the latest reading, independent of @system.storage so it can
-// be unit-tested with a fake. store.js wires it to the real module.
+// Persistence of the latest reading and history, independent of
+// @system.storage so it can be unit-tested with a fake. store.js wires it to
+// the real module.
 
-import { STORAGE_KEY } from './constants.js'
-import { decodeStoredReading } from './protocol.js'
+import { HISTORY_STORAGE_KEY, STORAGE_KEY } from './constants.js'
+import { decodeStoredHistory, decodeStoredReading } from './protocol.js'
 
-export function createStore(storageApi) {
-  /** Calls `onLoaded(readingOrNull)` exactly once. */
-  function loadReading(onLoaded) {
+/** A single JSON value stored under `key`, decoded with `decode` on load. */
+export function createSlot(storageApi, key, decode) {
+  /** Calls `onLoaded(valueOrNull)` exactly once. */
+  function load(onLoaded) {
     let done = false
-    const finish = (reading) => {
+    const finish = (value) => {
       if (!done) {
         done = true
-        onLoaded(reading)
+        onLoaded(value)
       }
     }
     try {
       storageApi.get({
-        key: STORAGE_KEY,
-        success: (raw) => finish(decodeStoredReading(raw)),
+        key,
+        success: (raw) => finish(decode(raw)),
         fail: (data, code) => {
-          console.error(`storage.get failed, code = ${code}`)
+          console.error(`storage.get(${key}) failed, code = ${code}`)
           finish(null)
         }
       })
     } catch (err) {
-      console.error('storage.get threw', err && err.message)
+      console.error(`storage.get(${key}) threw`, err && err.message)
       finish(null)
     }
   }
 
-  function saveReading(reading) {
+  function save(value) {
     try {
       storageApi.set({
-        key: STORAGE_KEY,
-        value: JSON.stringify(reading),
-        fail: (data, code) => console.error(`storage.set failed, code = ${code}`)
+        key,
+        value: JSON.stringify(value),
+        fail: (data, code) => console.error(`storage.set(${key}) failed, code = ${code}`)
       })
     } catch (err) {
-      console.error('storage.set threw', err && err.message)
+      console.error(`storage.set(${key}) threw`, err && err.message)
     }
   }
 
-  return { loadReading, saveReading }
+  return { load, save }
+}
+
+export function createStore(storageApi) {
+  const reading = createSlot(storageApi, STORAGE_KEY, decodeStoredReading)
+  const history = createSlot(storageApi, HISTORY_STORAGE_KEY, decodeStoredHistory)
+  return {
+    loadReading: reading.load,
+    saveReading: reading.save,
+    loadHistory: history.load,
+    saveHistory: history.save
+  }
 }

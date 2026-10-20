@@ -1,5 +1,5 @@
-// Build the immutable view model rendered by pages/index. Pure function of
-// (reading, now, link) so the page only has to assign `this.view = buildView(...)`.
+// View model of the "current glucose" section of pages/index. Pure function
+// of (reading, range, now, link).
 
 import {
   COLORS,
@@ -8,16 +8,22 @@ import {
   STALE_TREND_OPACITY,
   VALUE_FONT_LARGE,
   VALUE_FONT_MEDIUM,
-  VALUE_SHORT_TEXT_MAX
+  VALUE_FONT_WIDE,
+  VALUE_SHORT_TEXT_MAX,
+  VALUE_WIDE_NUMBER_MAX
 } from './constants.js'
-import { colorForMmol, formatAgo, formatDelta, minutesSince } from './glucose.js'
+import { formatAgo, formatDelta, levelColor, levelOfReading, minutesSince } from './glucose.js'
 import { LINK_STATE } from './link-state.js'
 import { trendIcon } from './trend.js'
 
-export const WARN_TEXT = Object.freeze({
+export const STATUS_TEXT = Object.freeze({
   STALE: '数据已过期',
-  TIME_UNKNOWN: '时间未知'
+  TIME_UNKNOWN: '时间未知',
+  SENSOR_LOST: '传感器未连接',
+  WAITING: '等待手机数据…'
 })
+
+const PLACEHOLDER_VALUE = '--'
 
 const LINK_ERROR_TEXT = Object.freeze({
   1000: '手机连接异常',
@@ -25,25 +31,32 @@ const LINK_ERROR_TEXT = Object.freeze({
   1006: '手机连接已断开'
 })
 
-function describeLink(link) {
+/** { text, dotColor, disconnected } for the phone link. */
+export function describeLink(link) {
   const state = link ? link.state : LINK_STATE.CONNECTING
   if (state === LINK_STATE.OPEN) {
-    return { linkText: '手机已连接', linkColor: COLORS.linkOk }
+    return { text: '手机已连接', dotColor: COLORS.inRange, disconnected: false }
   }
   if (state === LINK_STATE.CLOSED) {
-    return { linkText: '手机未连接', linkColor: COLORS.linkIdle }
+    return { text: '手机未连接', dotColor: COLORS.muted, disconnected: true }
   }
   if (state === LINK_STATE.ERROR) {
     const known = LINK_ERROR_TEXT[link.code]
     const text = known || (link.code !== null ? `手机连接异常 ${link.code}` : '手机连接异常')
-    return { linkText: text, linkColor: COLORS.linkError }
+    return { text, dotColor: COLORS.high, disconnected: true }
   }
-  return { linkText: '正在连接手机…', linkColor: COLORS.linkIdle }
+  return { text: '正在连接手机…', dotColor: COLORS.muted, disconnected: false }
 }
 
-function valueFontSize(text) {
-  const isNumeric = /^[0-9.,]+$/.test(text)
-  return isNumeric || text.length <= VALUE_SHORT_TEXT_MAX ? VALUE_FONT_LARGE : VALUE_FONT_MEDIUM
+/**
+ * Freshness from the phone's `ts` only (never band time): null -> time
+ * unknown; older than STALE_MINUTES (millisecond precision) -> stale.
+ */
+export function freshnessWarning(ts, now) {
+  if (ts === null) {
+    return STATUS_TEXT.TIME_UNKNOWN
+  }
+  return now - ts > STALE_MINUTES * MS_PER_MINUTE ? STATUS_TEXT.STALE : ''
 }
 
 function joinParts(parts) {
@@ -51,55 +64,60 @@ function joinParts(parts) {
 }
 
 /**
- * Freshness is derived from the phone's `ts` only (never from band time):
- * ts null -> time unknown; older than STALE_MINUTES (millisecond precision,
- * floored minutes would flip up to a minute late) -> stale.
+ * Sub-line under the value: "+0.2 · 3分钟前", or a warning instead, in this
+ * priority: phone link down without fresh data -> link text; sensor
+ * disconnected (it stays the cause even after the data ages); time unknown
+ * (with the CGM's own clock text, if any); expired.
  */
-function freshnessWarning(ts, now) {
-  if (ts === null) {
-    return WARN_TEXT.TIME_UNKNOWN
-  }
-  return now - ts > STALE_MINUTES * MS_PER_MINUTE ? WARN_TEXT.STALE : ''
-}
-
-function emptyView(linkView) {
-  return Object.assign({}, linkView, {
-    hasData: false,
-    valueText: '',
-    valueFontSize: VALUE_FONT_LARGE,
-    valueColor: COLORS.unknown,
-    trendIcon: '',
-    trendOpacity: 1,
-    unitText: '',
-    deltaText: '',
-    agoText: '',
-    warnText: '',
-    isGreyed: false,
-    sensorLost: false
-  })
-}
-
-export function buildView(reading, now, link) {
-  const linkView = describeLink(link)
+export function subLine(reading, now, link) {
+  const phone = describeLink(link)
   if (!reading) {
-    return emptyView(linkView)
+    return phone.disconnected ? phone.text : STATUS_TEXT.WAITING
   }
-  const warnText = freshnessWarning(reading.ts, now)
-  const sensorLost = !reading.connected
-  // Grey out whenever the number may no longer reflect the current glucose.
-  const isGreyed = warnText !== '' || sensorLost
-  return Object.assign({}, linkView, {
-    hasData: true,
-    valueText: reading.value,
-    valueFontSize: valueFontSize(reading.value),
-    valueColor: isGreyed ? COLORS.stale : colorForMmol(reading.mmol),
-    trendIcon: trendIcon(reading.trend),
-    trendOpacity: isGreyed ? STALE_TREND_OPACITY : 1,
-    unitText: reading.unit,
-    deltaText: formatDelta(reading.delta, reading.unit),
-    agoText: joinParts([reading.time, formatAgo(minutesSince(reading.ts, now))]),
-    warnText,
-    isGreyed,
-    sensorLost
-  })
+  const freshness = freshnessWarning(reading.ts, now)
+  if (freshness !== '' && phone.disconnected) {
+    return phone.text
+  }
+  if (!reading.connected) {
+    return STATUS_TEXT.SENSOR_LOST
+  }
+  if (freshness === STATUS_TEXT.TIME_UNKNOWN) {
+    return joinParts([reading.time, freshness])
+  }
+  if (freshness !== '') {
+    return freshness
+  }
+  return joinParts([formatDelta(reading.delta, reading.unit), formatAgo(minutesSince(reading.ts, now))])
+}
+
+/** Grey whenever the number may not reflect the current glucose. */
+export function isGreyed(reading, range, now) {
+  return !reading ||
+    freshnessWarning(reading.ts, now) !== '' ||
+    !reading.connected ||
+    levelOfReading(reading, range) === null
+}
+
+export function valueFontSize(text) {
+  if (text.length <= VALUE_SHORT_TEXT_MAX) {
+    return VALUE_FONT_LARGE
+  }
+  const isNumeric = /^[0-9.,]+$/.test(text)
+  return isNumeric && text.length <= VALUE_WIDE_NUMBER_MAX ? VALUE_FONT_WIDE : VALUE_FONT_MEDIUM
+}
+
+export function buildView(reading, range, now, link) {
+  const greyed = isGreyed(reading, range, now)
+  const valueText = reading ? reading.value : PLACEHOLDER_VALUE
+  return {
+    hasData: !!reading,
+    valueText,
+    valueFontSize: valueFontSize(valueText),
+    valueColor: greyed ? COLORS.muted : levelColor(levelOfReading(reading, range)),
+    trendIcon: reading ? trendIcon(reading.trend) : '',
+    trendOpacity: greyed ? STALE_TREND_OPACITY : 1,
+    unitText: reading ? reading.unit : '',
+    subText: subLine(reading, now, link),
+    linkDotColor: describeLink(link).dotColor
+  }
 }

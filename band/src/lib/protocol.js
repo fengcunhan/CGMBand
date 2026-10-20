@@ -1,8 +1,11 @@
 // Phone <-> band message protocol (JSON strings over system.interconnect).
 // Pure functions only: every call returns a new object, inputs are never mutated.
 
+import { toHistory } from './history.js'
+
 export const MESSAGE_TYPE = Object.freeze({
   BG: 'bg',
+  HISTORY: 'history',
   SYNC: 'sync'
 })
 
@@ -94,26 +97,41 @@ export function toReading(src) {
 }
 
 /**
- * Extract a reading from an incoming interconnect payload.
- * Unknown message types and malformed payloads yield null.
+ * Decode any incoming payload into { kind: 'bg', reading } or
+ * { kind: 'history', history }. Unknown types / malformed payloads -> null.
  */
-export function readingFromMessage(raw) {
+export function decodeMessage(raw) {
   const message = parseMessage(raw)
-  if (!message || message.type !== MESSAGE_TYPE.BG) {
+  if (!message) {
     return null
   }
-  return toReading(message)
+  if (message.type === MESSAGE_TYPE.BG) {
+    return { kind: MESSAGE_TYPE.BG, reading: toReading(message) }
+  }
+  if (message.type === MESSAGE_TYPE.HISTORY) {
+    return { kind: MESSAGE_TYPE.HISTORY, history: toHistory(message) }
+  }
+  return null
 }
 
-/** Decode a reading previously persisted with JSON.stringify(reading). */
-export function decodeStoredReading(raw) {
+function decodeStored(raw, normalise, label) {
   if (typeof raw !== 'string' || raw === '') {
     return null
   }
   try {
-    return toReading(JSON.parse(raw))
+    return normalise(JSON.parse(raw))
   } catch (err) {
-    console.error('storage: cached reading is corrupt', err && err.message)
+    console.error(`storage: cached ${label} is corrupt`, err && err.message)
     return null
   }
+}
+
+/** Decode a reading previously persisted with JSON.stringify(reading). */
+export function decodeStoredReading(raw) {
+  return decodeStored(raw, toReading, 'reading')
+}
+
+/** Decode history + range previously persisted with JSON.stringify(history). */
+export function decodeStoredHistory(raw) {
+  return decodeStored(raw, toHistory, 'history')
 }

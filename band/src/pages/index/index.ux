@@ -1,60 +1,115 @@
 <template>
   <div class="page">
-    <div class="link-row">
-      <div class="link-dot" style="background-color: {{view.linkColor}}; border-color: {{view.linkColor}}"></div>
-      <text class="link-text" style="color: {{view.linkColor}}">{{view.linkText}}</text>
+    <!-- History chart card. Everything inside is absolutely positioned from
+         lib/chart.js (no canvas on Vela JS: the line is made of small divs). -->
+    <div class="card">
+      <div
+        class="plot"
+        style="left: {{chart.plot.left}}px; top: {{chart.plot.top}}px; width: {{chart.plot.width}}px; height: {{chart.plot.height}}px"
+      >
+        <div
+          class="band"
+          style="top: {{chart.band.top}}px; width: {{chart.plot.width}}px; height: {{chart.band.height}}px"
+        ></div>
+        <div
+          class="grid-line"
+          for="{{chart.grid}}"
+          tid="id"
+          style="top: {{$item.top}}px; width: {{chart.plot.width}}px"
+        ></div>
+        <div
+          class="piece"
+          for="{{chart.pieces}}"
+          tid="id"
+          style="left: {{$item.l}}px; top: {{$item.t}}px; width: {{$item.w}}px; height: {{$item.h}}px; background-color: {{$item.c}}"
+        ></div>
+        <div
+          if="{{chart.hasDot}}"
+          class="dot"
+          style="left: {{chart.dot.left}}px; top: {{chart.dot.top}}px; width: {{chart.dot.size}}px; height: {{chart.dot.size}}px; border-radius: {{chart.dot.radius}}px; background-color: {{chart.dot.color}}; border-color: {{chart.dot.color}}"
+        ></div>
+      </div>
+      <text
+        class="range-label"
+        style="left: {{chart.labels.high.left}}px; top: {{chart.labels.high.top}}px; width: {{chart.labelWidth}}px; height: {{chart.labelHeight}}px; color: {{chart.labels.high.color}}"
+      >{{chart.labels.high.text}}</text>
+      <text
+        class="range-label"
+        style="left: {{chart.labels.low.left}}px; top: {{chart.labels.low.top}}px; width: {{chart.labelWidth}}px; height: {{chart.labelHeight}}px; color: {{chart.labels.low.color}}"
+      >{{chart.labels.low.text}}</text>
+      <text
+        class="time-label"
+        for="{{chart.times}}"
+        tid="id"
+        style="left: {{$item.left}}px; top: {{chart.timeTop}}px; width: {{chart.timeWidth}}px; text-align: {{$item.align}}"
+      >{{$item.text}}</text>
+      <text if="{{chart.empty}}" class="empty">暂无历史数据</text>
     </div>
 
-    <div class="main" if="{{view.hasData}}">
+    <!-- Current glucose. -->
+    <div class="current">
+      <div class="label-row">
+        <div class="link-dot" style="background-color: {{view.linkDotColor}}; border-color: {{view.linkDotColor}}"></div>
+        <text class="label">当前血糖</text>
+      </div>
       <div class="value-row">
         <text class="value" style="color: {{view.valueColor}}; font-size: {{view.valueFontSize}}px">{{view.valueText}}</text>
-        <image
-          if="{{view.trendIcon}}"
-          class="trend"
-          src="{{view.trendIcon}}"
-          style="opacity: {{view.trendOpacity}}"
-        ></image>
+        <div class="side">
+          <image
+            if="{{view.trendIcon}}"
+            class="trend"
+            src="{{view.trendIcon}}"
+            style="opacity: {{view.trendOpacity}}"
+          ></image>
+          <text class="unit">{{view.unitText}}</text>
+        </div>
       </div>
-      <text class="unit">{{view.unitText}}</text>
-      <div class="meta-row">
-        <text if="{{view.deltaText}}" class="delta">{{view.deltaText}}</text>
-        <text class="ago">{{view.agoText}}</text>
-      </div>
-      <text if="{{view.warnText}}" class="warn">{{view.warnText}}</text>
-      <text if="{{view.sensorLost}}" class="hint">传感器未连接</text>
+      <text class="sub">{{view.subText}}</text>
     </div>
-    <div class="main" else>
-      <text class="waiting">等待手机数据…</text>
-    </div>
-
-    <div class="bottom-spacer"></div>
   </div>
 </template>
 
 <script>
 import { REFRESH_INTERVAL_MS } from '../../lib/constants.js'
-import { initialLinkState } from '../../lib/link-state.js'
+import { chartKey, sameChartKey } from '../../lib/chart-cache.js'
+import { buildChart } from '../../lib/chart.js'
 import { attachLink } from '../../lib/link.js'
 import {
   initialPageState,
+  storedHistory,
+  withCachedHistory,
   withCachedReading,
   withLink,
+  withLiveHistory,
   withLiveReading
 } from '../../lib/page-state.js'
-import { readingFromMessage } from '../../lib/protocol.js'
-import { loadReading, saveReading } from '../../lib/store.js'
+import { MESSAGE_TYPE, decodeMessage } from '../../lib/protocol.js'
+import { loadHistory, loadReading, saveHistory, saveReading } from '../../lib/store.js'
 import { buildView } from '../../lib/view.js'
 
+function renderView(pageState, now) {
+  return buildView(pageState.reading, pageState.range, now, pageState.link)
+}
+
+function renderChart(key, now) {
+  return buildChart(key.history, key.range, key.unit, now)
+}
+
+const INITIAL_STATE = initialPageState()
+const INITIAL_NOW = Date.now()
+
 export default {
-  // Only `view` is reactive. Page state lives in plain fields set in onInit
+  // Only `view` and `chart` are reactive. Page state lives in plain fields
   // and is replaced (never mutated) through the pure page-state functions.
   private: {
-    view: buildView(null, Date.now(), initialLinkState())
+    view: renderView(INITIAL_STATE, INITIAL_NOW),
+    chart: renderChart(chartKey(INITIAL_STATE, INITIAL_NOW, REFRESH_INTERVAL_MS), INITIAL_NOW)
   },
 
   onInit() {
     this.destroyed = false
     this.timerId = null
+    this.chartKey = null
     this.pageState = initialPageState()
     this.channel = attachLink({
       onMessage: (raw) => this.handleMessage(raw),
@@ -62,6 +117,7 @@ export default {
       onOpen: () => this.channel && this.channel.requestSync()
     })
     loadReading((cached) => this.applyState(withCachedReading(this.pageState, cached)))
+    loadHistory((cached) => this.applyState(withCachedHistory(this.pageState, cached)))
   },
 
   onShow() {
@@ -82,13 +138,21 @@ export default {
   },
 
   handleMessage(raw) {
-    const reading = readingFromMessage(raw)
-    if (!reading) {
+    const message = decodeMessage(raw)
+    if (!message) {
       return
     }
-    const result = withLiveReading(this.pageState, reading)
+    if (message.kind === MESSAGE_TYPE.BG) {
+      const result = withLiveReading(this.pageState, message.reading)
+      if (result.persist) {
+        saveReading(result.state.reading)
+      }
+      this.applyState(result.state)
+      return
+    }
+    const result = withLiveHistory(this.pageState, message.history)
     if (result.persist) {
-      saveReading(result.state.reading)
+      saveHistory(storedHistory(result.state))
     }
     this.applyState(result.state)
   },
@@ -105,7 +169,15 @@ export default {
     if (this.destroyed) {
       return
     }
-    this.view = buildView(this.pageState.reading, Date.now(), this.pageState.link)
+    const now = Date.now()
+    this.view = renderView(this.pageState, now)
+    // Rebuild the ~100 chart divs only when history/range/unit change or the
+    // x axis moves to the next refresh interval.
+    const key = chartKey(this.pageState, now, REFRESH_INTERVAL_MS)
+    if (!sameChartKey(key, this.chartKey)) {
+      this.chartKey = key
+      this.chart = renderChart(key, now)
+    }
   },
 
   tick() {
@@ -136,32 +208,93 @@ export default {
   background-color: #000000;
 }
 
-.link-row {
-  height: 64px;
-  padding-top: 24px;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-}
-
-.link-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 5px;
+/* Chart card: 312x208 at a 12px inset (inner geometry: lib/chart-layout.js). */
+.card {
+  width: 312px;
+  height: 208px;
+  margin-top: 12px;
+  border-radius: 24px;
   border-width: 1px;
-  margin-right: 8px;
+  border-color: #1a1d23;
+  background-color: #1a1d23;
 }
 
-.link-text {
-  font-size: 22px;
+.plot {
+  position: absolute;
 }
 
-.main {
+.band {
+  position: absolute;
+  left: 0px;
+  background-color: #1c2626;
+}
+
+.grid-line {
+  position: absolute;
+  left: 0px;
+  height: 1px;
+  background-color: #2a2e35;
+}
+
+.piece {
+  position: absolute;
+}
+
+.dot {
+  position: absolute;
+  border-width: 1px;
+}
+
+.range-label {
+  position: absolute;
+  font-size: 18px;
+  lines: 1;
+}
+
+.time-label {
+  position: absolute;
+  height: 22px;
+  font-size: 18px;
+  color: #9ca3af;
+  lines: 1;
+}
+
+.empty {
+  position: absolute;
+  left: 0px;
+  top: 76px;
+  width: 312px;
+  height: 32px;
+  font-size: 24px;
+  color: #9ca3af;
+  text-align: center;
+}
+
+/* Current glucose. */
+.current {
   flex: 1;
   width: 100%;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+.label-row {
+  flex-direction: row;
+  align-items: center;
+}
+
+.link-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  border-width: 1px;
+  margin-right: 8px;
+}
+
+.label {
+  font-size: 22px;
+  color: #9ca3af;
 }
 
 .value-row {
@@ -171,60 +304,32 @@ export default {
 }
 
 .value {
-  font-size: 110px;
+  font-size: 120px;
   font-weight: bold;
   lines: 1;
 }
 
+.side {
+  margin-left: 10px;
+  flex-direction: column;
+  align-items: center;
+}
+
 .trend {
-  width: 56px;
-  height: 56px;
-  margin-left: 8px;
+  width: 48px;
+  height: 48px;
   object-fit: contain;
 }
 
 .unit {
+  margin-top: 4px;
+  font-size: 20px;
+  color: #9ca3af;
+}
+
+.sub {
   font-size: 24px;
-  color: #9a9a9a;
-}
-
-.meta-row {
-  margin-top: 18px;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-}
-
-.delta {
-  font-size: 30px;
-  font-weight: bold;
-  color: #ffffff;
-  margin-right: 14px;
-}
-
-.ago {
-  font-size: 24px;
-  color: #9a9a9a;
-}
-
-.warn {
-  margin-top: 16px;
-  font-size: 28px;
-  color: #ff9f0a;
-}
-
-.hint {
-  margin-top: 8px;
-  font-size: 22px;
-  color: #ff9f0a;
-}
-
-.waiting {
-  font-size: 30px;
-  color: #9a9a9a;
-}
-
-.bottom-spacer {
-  height: 64px;
+  color: #9ca3af;
+  lines: 1;
 }
 </style>

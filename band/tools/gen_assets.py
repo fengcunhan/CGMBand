@@ -16,9 +16,9 @@ SRC_COMMON = pathlib.Path(__file__).resolve().parent.parent / "src" / "common"
 TREND_DIR = SRC_COMMON / "trend"
 
 SUPERSAMPLE = 4
-ARROW_SIZE = 56          # displayed at 56x56 px (designWidth 336 == 1:1 on Band 9 Pro)
+ARROW_SIZE = 48          # displayed at 48x48 px (designWidth 336 == 1:1 on Band 9 Pro)
 ICON_SIZE = 128          # same size as the official interconnect demo logo
-ARROW_COLOR = (255, 255, 255, 255)
+ARROW_COLOR = (0xE5, 0xE7, 0xEB, 255)  # #E5E7EB (phone dark-mode line colour)
 ICON_BG = (229, 57, 53, 255)
 ICON_FG = (255, 255, 255, 255)
 

@@ -3,11 +3,17 @@ import assert from 'node:assert/strict'
 
 import {
   createSyncRequest,
+  decodeMessage,
+  decodeStoredHistory,
   decodeStoredReading,
   parseMessage,
-  readingFromMessage,
   toReading
 } from '../src/lib/protocol.js'
+
+function readingFromMessage(raw) {
+  const message = decodeMessage(raw)
+  return message && message.kind === 'bg' ? message.reading : null
+}
 
 const SAMPLE = JSON.stringify({
   type: 'bg',
@@ -120,4 +126,35 @@ test('toReading does not mutate its input', () => {
   const reading = toReading(src)
   assert.notEqual(reading, src)
   assert.equal(src.trend, 'BAD')
+})
+
+test('decodeMessage dispatches bg and history, ignores the rest', (t) => {
+  quietErrors(t)
+  const bg = decodeMessage(SAMPLE)
+  assert.equal(bg.kind, 'bg')
+  assert.equal(bg.reading.value, '6.6')
+
+  const history = decodeMessage(
+    '{"type":"history","ref":1792398000000,"range":[3.9,7.8],"points":[[240,66],[237,65],[3,62],[0,61]]}'
+  )
+  assert.equal(history.kind, 'history')
+  assert.equal(history.history.ref, 1792398000000)
+  assert.equal(history.history.points.length, 4)
+  assert.deepEqual(history.history.range, [3.9, 7.8])
+
+  const empty = decodeMessage('{"type":"history","ref":null,"range":[4.4,10.0],"points":[]}')
+  assert.deepEqual(empty.history, { ref: null, points: [], range: [4.4, 10] })
+
+  assert.equal(decodeMessage('{"type":"sync"}'), null)
+  assert.equal(decodeMessage('{"type":"ping"}'), null)
+  assert.equal(decodeMessage('not json'), null)
+})
+
+test('decodeStoredHistory round-trips and tolerates corruption', (t) => {
+  quietErrors(t)
+  const stored = { ref: 1792398000000, points: [[3, 62], [0, 61]], range: [4.4, 10] }
+  assert.deepEqual(decodeStoredHistory(JSON.stringify(stored)), stored)
+  assert.equal(decodeStoredHistory(''), null)
+  assert.equal(decodeStoredHistory('{broken'), null)
+  assert.equal(decodeStoredHistory('7'), null)
 })

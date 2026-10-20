@@ -6,8 +6,11 @@ import {
   SOURCE,
   initialPageState,
   sameReading,
+  storedHistory,
+  withCachedHistory,
   withCachedReading,
   withLink,
+  withLiveHistory,
   withLiveReading
 } from '../src/lib/page-state.js'
 
@@ -18,11 +21,13 @@ function reading(ts, overrides) {
   )
 }
 
-test('initial state has no reading and is connecting', () => {
+test('initial state has no reading/history, default range, connecting', () => {
   const state = initialPageState()
   assert.equal(state.reading, null)
   assert.equal(state.source, null)
   assert.equal(state.link.state, LINK_STATE.CONNECTING)
+  assert.equal(state.history, null)
+  assert.deepEqual(state.range, [3.9, 7.8])
 })
 
 test('cached reading is applied only when nothing is shown yet', () => {
@@ -100,4 +105,78 @@ test('sameReading compares displayed fields only', () => {
   assert.equal(sameReading(null, reading(1)), false)
   assert.equal(sameReading(reading(1), reading(1, { extra: 5 })), true)
   assert.equal(sameReading(reading(1), reading(1, { value: '7.0' })), false)
+})
+
+function historyPayload(points, range) {
+  return { ref: points.length ? 1000 : null, points, range: range === undefined ? [3.9, 7.8] : range }
+}
+
+test('cached history applies until live history arrives', () => {
+  const cached = withCachedHistory(initialPageState(), historyPayload([[0, 61]], [4.4, 10]))
+  assert.deepEqual(cached.history, { ref: 1000, points: [[0, 61]] })
+  assert.deepEqual(cached.range, [4.4, 10])
+  assert.equal(cached.historySource, SOURCE.CACHE)
+
+  const live = withLiveHistory(cached, historyPayload([[0, 62]])).state
+  assert.equal(withCachedHistory(live, historyPayload([[0, 50]])), live)
+  assert.equal(withCachedHistory(cached, null), cached)
+})
+
+test('live history replaces history and range, persists only on change', () => {
+  const first = withLiveHistory(initialPageState(), historyPayload([[3, 62], [0, 61]]))
+  assert.equal(first.persist, true)
+  assert.deepEqual(first.state.history.points, [[3, 62], [0, 61]])
+  assert.equal(first.state.historySource, SOURCE.LIVE)
+  assert.equal(first.state.link.state, LINK_STATE.OPEN)
+
+  const again = withLiveHistory(first.state, historyPayload([[3, 62], [0, 61]]))
+  assert.equal(again.persist, false)
+
+  // First live history of a session is persisted even if equal to defaults,
+  // so a stale cached range in storage gets replaced.
+  const cachedCustom = withCachedHistory(initialPageState(), historyPayload([], [5, 9]))
+  const liveDefault = withLiveHistory(cachedCustom, historyPayload([], [3.9, 7.8]))
+  assert.equal(liveDefault.persist, true)
+  assert.deepEqual(withLiveHistory(initialPageState(), historyPayload([])).persist, true)
+
+  const rangeOnly = withLiveHistory(first.state, historyPayload([[3, 62], [0, 61]], [4.4, 10]))
+  assert.equal(rangeOnly.persist, true)
+  assert.deepEqual(rangeOnly.state.range, [4.4, 10])
+})
+
+test('empty history clears the chart but still applies the range', () => {
+  const withData = withLiveHistory(initialPageState(), historyPayload([[0, 61]])).state
+  const cleared = withLiveHistory(withData, historyPayload([], [5, 9]))
+  assert.equal(cleared.persist, true)
+  assert.deepEqual(cleared.state.history, { ref: null, points: [] })
+  assert.deepEqual(cleared.state.range, [5, 9])
+})
+
+test('invalid range (null) keeps the current one', () => {
+  const custom = withLiveHistory(initialPageState(), historyPayload([[0, 61]], [4.4, 10])).state
+  const next = withLiveHistory(custom, historyPayload([[0, 62]], null)).state
+  assert.deepEqual(next.range, [4.4, 10])
+  assert.equal(withLiveHistory(custom, null).state, custom)
+})
+
+test('storedHistory is the persisted shape', () => {
+  assert.deepEqual(storedHistory(initialPageState()), { ref: null, points: [], range: [3.9, 7.8] })
+  const state = withLiveHistory(initialPageState(), historyPayload([[0, 61]])).state
+  assert.deepEqual(storedHistory(state), { ref: 1000, points: [[0, 61]], range: [3.9, 7.8] })
+})
+
+test('history transitions never mutate the previous state', () => {
+  const state = Object.freeze(initialPageState())
+  withCachedHistory(state, historyPayload([[0, 61]]))
+  withLiveHistory(state, historyPayload([[0, 61]], [4, 9]))
+  assert.equal(state.history, null)
+  assert.deepEqual(state.range, [3.9, 7.8])
+})
+
+test('withLink returns the same state when nothing changed', () => {
+  const state = withLink(initialPageState(), linkState(LINK_STATE.OPEN, null))
+  assert.equal(withLink(state, linkState(LINK_STATE.OPEN, null)), state)
+  assert.notEqual(withLink(state, linkState(LINK_STATE.CLOSED, null)), state)
+  const closed = withLink(state, linkState(LINK_STATE.CLOSED, 1006))
+  assert.notEqual(withLink(closed, linkState(LINK_STATE.CLOSED, null)), closed)
 })

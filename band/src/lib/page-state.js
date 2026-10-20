@@ -1,6 +1,8 @@
 // Pure state transitions for pages/index. Every function returns a new state
 // object (or the same one when nothing changes); inputs are never mutated.
 
+import { DEFAULT_RANGE } from './constants.js'
+import { sameHistory } from './history.js'
 import { LINK_STATE, initialLinkState, linkState } from './link-state.js'
 
 export const SOURCE = Object.freeze({
@@ -13,7 +15,14 @@ const COMPARED_FIELDS = Object.freeze([
 ])
 
 export function initialPageState() {
-  return { reading: null, source: null, link: initialLinkState() }
+  return {
+    reading: null,
+    source: null,
+    link: initialLinkState(),
+    history: null,
+    range: DEFAULT_RANGE.slice(),
+    historySource: null
+  }
 }
 
 export function sameReading(a, b) {
@@ -50,15 +59,62 @@ export function withLiveReading(state, reading) {
   if (state.source === SOURCE.LIVE && isOlder(reading, state.reading)) {
     return { state, persist: false }
   }
-  const link = state.link.state === LINK_STATE.OPEN
-    ? state.link
-    : linkState(LINK_STATE.OPEN, null)
   return {
-    state: Object.assign({}, state, { reading, source: SOURCE.LIVE, link }),
+    state: Object.assign({}, state, { reading, source: SOURCE.LIVE, link: openLink(state) }),
     persist: !sameReading(state.reading, reading)
   }
 }
 
+// A valid message proves the phone link works.
+function openLink(state) {
+  return state.link.state === LINK_STATE.OPEN ? state.link : linkState(LINK_STATE.OPEN, null)
+}
+
+/** The persisted form of history + range: { ref, points, range }. */
+export function storedHistory(state) {
+  return {
+    ref: state.history ? state.history.ref : null,
+    points: state.history ? state.history.points : [],
+    range: state.range
+  }
+}
+
+function applyHistory(state, parsed, source) {
+  return Object.assign({}, state, {
+    history: { ref: parsed.ref, points: parsed.points },
+    range: parsed.range || state.range,
+    historySource: source
+  })
+}
+
+/** Apply history restored from storage; never overrides live history. */
+export function withCachedHistory(state, cached) {
+  if (!cached || state.historySource === SOURCE.LIVE) {
+    return state
+  }
+  return applyHistory(state, cached, SOURCE.CACHE)
+}
+
+/**
+ * Apply a "history" message (always authoritative: it carries the phone's
+ * complete recent history). A missing/invalid range keeps the current one.
+ * Returns { state, persist }: persist when history/range changed, and always
+ * for the first live history of a session so a stale cached range is replaced.
+ */
+export function withLiveHistory(state, parsed) {
+  if (!parsed) {
+    return { state, persist: false }
+  }
+  const next = Object.assign(applyHistory(state, parsed, SOURCE.LIVE), { link: openLink(state) })
+  return {
+    state: next,
+    persist: state.historySource !== SOURCE.LIVE ||
+      !sameHistory(storedHistory(state), storedHistory(next))
+  }
+}
+
+/** Returns the same state object when the link did not change (no re-render). */
 export function withLink(state, link) {
-  return Object.assign({}, state, { link })
+  const same = state.link.state === link.state && state.link.code === link.code
+  return same ? state : Object.assign({}, state, { link })
 }

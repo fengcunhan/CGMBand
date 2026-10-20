@@ -5,15 +5,19 @@ import {
   COLORS,
   STALE_TREND_OPACITY,
   VALUE_FONT_LARGE,
-  VALUE_FONT_MEDIUM
+  VALUE_FONT_MEDIUM,
+  VALUE_FONT_WIDE
 } from '../src/lib/constants.js'
 import { LINK_STATE, initialLinkState, linkState } from '../src/lib/link-state.js'
 import { trendIcon } from '../src/lib/trend.js'
-import { WARN_TEXT, buildView } from '../src/lib/view.js'
+import { STATUS_TEXT, buildView, describeLink, subLine } from '../src/lib/view.js'
 
 const NOW = 1792398021000
 const MINUTE = 60000
+const RANGE = [3.9, 7.8]
 const OPEN = linkState(LINK_STATE.OPEN, null)
+const CLOSED = linkState(LINK_STATE.CLOSED, 1006)
+const CONNECTING = initialLinkState()
 
 function reading(overrides) {
   return Object.assign(
@@ -32,79 +36,105 @@ function reading(overrides) {
 }
 
 function assertGreyed(view) {
-  assert.equal(view.isGreyed, true)
-  assert.equal(view.valueColor, COLORS.stale)
+  assert.equal(view.valueColor, '#9CA3AF')
   assert.equal(view.trendOpacity, STALE_TREND_OPACITY)
 }
 
-test('no data shows the waiting state', () => {
-  const view = buildView(null, NOW, initialLinkState())
-  assert.equal(view.hasData, false)
-  assert.equal(view.warnText, '')
-  assert.equal(view.linkText, '正在连接手机…')
-})
-
-test('fresh reading is coloured and labelled', () => {
-  const view = buildView(reading(), NOW, OPEN)
+test('fresh in-range reading: green value, arrow, unit, delta · age', () => {
+  const view = buildView(reading(), RANGE, NOW, OPEN)
   assert.equal(view.hasData, true)
   assert.equal(view.valueText, '6.6')
-  assert.equal(view.valueColor, COLORS.inRange)
+  assert.equal(view.valueColor, '#22A06B')
   assert.equal(view.trendIcon, '/common/trend/up45.png')
   assert.equal(view.trendOpacity, 1)
   assert.equal(view.unitText, 'mmol/L')
-  assert.equal(view.deltaText, '+0.2')
-  assert.equal(view.agoText, '16:33 · 3 分钟前')
-  assert.equal(view.warnText, '')
-  assert.equal(view.isGreyed, false)
-  assert.equal(view.sensorLost, false)
-  assert.equal(view.linkText, '手机已连接')
-  assert.equal(view.linkColor, COLORS.linkOk)
+  assert.equal(view.subText, '+0.2 · 3分钟前')
+  assert.equal(view.linkDotColor, COLORS.inRange)
 })
 
-test('reading older than 10 minutes is greyed out (millisecond precision)', () => {
-  const tenMin = buildView(reading({ ts: NOW - 10 * MINUTE }), NOW, OPEN)
-  assert.equal(tenMin.isGreyed, false)
-  assert.equal(tenMin.warnText, '')
-
-  const justOver = buildView(reading({ ts: NOW - 10 * MINUTE - 1 }), NOW, OPEN)
-  assertGreyed(justOver)
-  assert.equal(justOver.warnText, WARN_TEXT.STALE)
-  assert.equal(justOver.agoText, '16:33 · 10 分钟前')
+test('value colour follows the target range', () => {
+  assert.equal(buildView(reading({ mmol: 8.4 }), RANGE, NOW, OPEN).valueColor, '#F7931E')
+  assert.equal(buildView(reading({ mmol: 3.5 }), RANGE, NOW, OPEN).valueColor, '#E53935')
+  assert.equal(buildView(reading({ mmol: 8.4 }), [4.4, 10.0], NOW, OPEN).valueColor, '#22A06B')
 })
 
-test('ts null means time unknown: greyed, "时间未知", no age label', () => {
-  const view = buildView(reading({ ts: null }), NOW, OPEN)
+test('LO / HI (mmol null) take their level from the text, like the phone', () => {
+  const lo = buildView(reading({ value: 'LO', mmol: null }), RANGE, NOW, OPEN)
+  assert.equal(lo.valueText, 'LO')
+  assert.equal(lo.valueColor, '#E53935')
+  assert.equal(lo.trendOpacity, 1)
+  assert.equal(buildView(reading({ value: 'HI', mmol: null }), RANGE, NOW, OPEN).valueColor, '#F7931E')
+  assert.equal(buildView(reading({ value: ' low', mmol: null }), RANGE, NOW, OPEN).valueColor, '#E53935')
+})
+
+test('other unknown values (mmol null) are grey', () => {
+  assertGreyed(buildView(reading({ value: '--', mmol: null }), RANGE, NOW, OPEN))
+  assertGreyed(buildView(reading({ value: 'ERR', mmol: null }), RANGE, NOW, OPEN))
+})
+
+test('LO that is stale is still grey', () => {
+  assertGreyed(buildView(reading({ value: 'LO', mmol: null, ts: NOW - 30 * MINUTE }), RANGE, NOW, OPEN))
+})
+
+test('older than 10 minutes: grey + 数据已过期 (millisecond precision)', () => {
+  const edge = buildView(reading({ ts: NOW - 10 * MINUTE }), RANGE, NOW, OPEN)
+  assert.equal(edge.valueColor, '#22A06B')
+  const stale = buildView(reading({ ts: NOW - 10 * MINUTE - 1 }), RANGE, NOW, OPEN)
+  assertGreyed(stale)
+  assert.equal(stale.subText, STATUS_TEXT.STALE)
+})
+
+test('ts null: grey + 时间未知 with the CGM clock text when present', () => {
+  const view = buildView(reading({ ts: null }), RANGE, NOW, OPEN)
   assertGreyed(view)
-  assert.equal(view.warnText, WARN_TEXT.TIME_UNKNOWN)
-  assert.equal(view.agoText, '16:33')
-  assert.equal(buildView(reading({ ts: null, time: '' }), NOW, OPEN).agoText, '')
+  assert.equal(view.subText, '16:33 · 时间未知')
+  assert.equal(subLine(reading({ ts: null, time: '' }), NOW, OPEN), '时间未知')
 })
 
-test('sensor disconnected greys the value and shows the hint', () => {
-  const view = buildView(reading({ connected: false }), NOW, OPEN)
+test('sensor disconnected: grey + 传感器未连接, even after the data ages', () => {
+  const view = buildView(reading({ connected: false }), RANGE, NOW, OPEN)
   assertGreyed(view)
-  assert.equal(view.sensorLost, true)
-  assert.equal(view.warnText, '')
+  assert.equal(view.subText, '传感器未连接')
+  assert.equal(subLine(reading({ connected: false, ts: NOW - 30 * MINUTE }), NOW, OPEN), '传感器未连接')
+  assert.equal(subLine(reading({ connected: false, ts: null }), NOW, OPEN), '传感器未连接')
+  // Phone link down + old data: the link is the more fundamental cause.
+  assert.equal(subLine(reading({ connected: false, ts: NOW - 30 * MINUTE }), NOW, CLOSED), '手机未连接')
 })
 
-test('unknown mmol and trend', () => {
-  const view = buildView(reading({ trend: 'NONE', mmol: null }), NOW, OPEN)
+test('no data: placeholder value and 等待手机数据…', () => {
+  const view = buildView(null, RANGE, NOW, CONNECTING)
+  assert.equal(view.hasData, false)
+  assert.equal(view.valueText, '--')
+  assert.equal(view.valueColor, '#9CA3AF')
   assert.equal(view.trendIcon, '')
-  assert.equal(view.valueColor, COLORS.unknown)
+  assert.equal(view.unitText, '')
+  assert.equal(view.subText, '等待手机数据…')
 })
 
-test('future ts (clock skew) is treated as just now', () => {
-  const view = buildView(reading({ ts: NOW + 2 * MINUTE }), NOW, OPEN)
-  assert.equal(view.isGreyed, false)
-  assert.equal(view.agoText, '16:33 · 刚刚')
+test('phone link down replaces the sub-line only when data is not fresh', () => {
+  assert.equal(subLine(null, NOW, CLOSED), '手机未连接')
+  assert.equal(subLine(reading({ ts: NOW - 30 * MINUTE }), NOW, CLOSED), '手机未连接')
+  assert.equal(subLine(reading({ ts: null }), NOW, CLOSED), '手机未连接')
+  assert.equal(subLine(reading(), NOW, CLOSED), '+0.2 · 3分钟前')
+  assert.equal(subLine(null, NOW, linkState(LINK_STATE.ERROR, 1001)), '手机端App未安装')
+  assert.equal(subLine(reading({ ts: null }), NOW, CONNECTING), '16:33 · 时间未知')
 })
 
-test('link state texts', () => {
-  assert.equal(buildView(null, NOW, linkState(LINK_STATE.CLOSED, 1006)).linkText, '手机未连接')
-  assert.equal(buildView(null, NOW, linkState(LINK_STATE.ERROR, 1001)).linkText, '手机端App未安装')
-  assert.equal(buildView(null, NOW, linkState(LINK_STATE.ERROR, 77)).linkText, '手机连接异常 77')
-  assert.equal(buildView(null, NOW, linkState(LINK_STATE.ERROR, null)).linkText, '手机连接异常')
-  assert.equal(buildView(null, NOW, null).linkText, '正在连接手机…')
+test('sub-line without delta or just now', () => {
+  assert.equal(subLine(reading({ delta: null }), NOW, OPEN), '3分钟前')
+  assert.equal(subLine(reading({ ts: NOW - 20000 }), NOW, OPEN), '+0.2 · 刚刚')
+  assert.equal(subLine(reading({ ts: NOW - 125 * MINUTE }), NOW, OPEN), '数据已过期')
+})
+
+test('describeLink texts and dot colours', () => {
+  assert.deepEqual(describeLink(OPEN), { text: '手机已连接', dotColor: '#22A06B', disconnected: false })
+  assert.equal(describeLink(CLOSED).text, '手机未连接')
+  assert.equal(describeLink(CLOSED).dotColor, '#9CA3AF')
+  assert.equal(describeLink(linkState(LINK_STATE.ERROR, 77)).text, '手机连接异常 77')
+  assert.equal(describeLink(linkState(LINK_STATE.ERROR, null)).text, '手机连接异常')
+  assert.equal(describeLink(linkState(LINK_STATE.ERROR, 1001)).dotColor, '#F7931E')
+  assert.equal(describeLink(null).text, '正在连接手机…')
+  assert.equal(describeLink(CONNECTING).disconnected, false)
 })
 
 test('every trend except NONE maps to an image', () => {
@@ -113,16 +143,19 @@ test('every trend except NONE maps to an image', () => {
   assert.equal(trendIcon('NONE'), '')
 })
 
-test('value font size shrinks only for long non-numeric text', () => {
-  assert.equal(buildView(reading({ value: '13.9' }), NOW, OPEN).valueFontSize, VALUE_FONT_LARGE)
-  assert.equal(buildView(reading({ value: '250' }), NOW, OPEN).valueFontSize, VALUE_FONT_LARGE)
-  assert.equal(buildView(reading({ value: 'LO' }), NOW, OPEN).valueFontSize, VALUE_FONT_LARGE)
-  assert.equal(buildView(reading({ value: '--' }), NOW, OPEN).valueFontSize, VALUE_FONT_LARGE)
-  assert.equal(buildView(reading({ value: 'HIGH' }), NOW, OPEN).valueFontSize, VALUE_FONT_MEDIUM)
+test('value font size: as large as fits next to the arrow', () => {
+  const size = (value) => buildView(reading({ value }), RANGE, NOW, OPEN).valueFontSize
+  assert.equal(size('8.9'), VALUE_FONT_LARGE)
+  assert.equal(size('250'), VALUE_FONT_LARGE)
+  assert.equal(size('LO'), VALUE_FONT_LARGE)
+  assert.equal(size('13.9'), VALUE_FONT_WIDE)
+  assert.equal(size('HIGH'), VALUE_FONT_MEDIUM)
+  assert.equal(size('SENSOR'), VALUE_FONT_MEDIUM)
+  assert.equal(buildView(null, RANGE, NOW, OPEN).valueFontSize, VALUE_FONT_LARGE)
 })
 
-test('buildView does not mutate the reading', () => {
+test('buildView does not mutate its inputs', () => {
   const src = Object.freeze(reading())
-  const view = buildView(src, NOW, OPEN)
-  assert.notEqual(view, src)
+  const range = Object.freeze(RANGE.slice())
+  assert.doesNotThrow(() => buildView(src, range, NOW, Object.freeze(OPEN)))
 })

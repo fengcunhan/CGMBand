@@ -7,3 +7,5 @@ const store = createStore(storage)
 
 export const loadReading = store.loadReading
 export const saveReading = store.saveReading
+export const loadHistory = store.loadHistory
+export const saveHistory = store.saveHistory
