@@ -6,6 +6,8 @@ band/sign/
 *.pem
 
 # android
+# Xiaomi wearable SDK: fetched from Xiaomi's CDN by tools/fetch_xms_sdk.sh, not redistributed
+android/app/libs/*.aar
 android/.gradle/
 android/build/
 android/app/build/
@@ -13,7 +15,8 @@ android/local.properties
 android/.idea/
 *.iml
 
-# band (vela)
+# band (vela); aiot-toolkit stages the project, including signing PEMs, in ../.temp_band during builds
+.temp_band/
 band/node_modules/
 band/build/
 band/dist/

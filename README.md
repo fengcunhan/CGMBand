@@ -210,21 +210,24 @@ AstroBox 需要用 AuthKey 才能连接你的手环。AuthKey 就是小米运动
 |---|---|
 | `android/` | 手机端 Kotlin 工程。`core/` 是纯逻辑，有 JVM 单元测试；其余是 Android 组件 |
 | `band/` | 手环端 Vela JS 快应用（aiot-toolkit 2.x），有 Node 单元测试 |
-| `tools/` | `create_keystore.sh` 生成签名，`build_release.sh` 一键构建，`extract_authkey.py` 提取 AuthKey |
+| `tools/` | `create_keystore.sh` 生成签名，`fetch_xms_sdk.sh` 下载小米穿戴 SDK，`build_release.sh` 一键构建，`extract_authkey.py` 提取 AuthKey |
 | `keystore/` | 两端共用的签名和 AuthKey。被 git 忽略，丢了就得两端一起重新签名、重新安装 |
 
 ### 构建
 
 ```bash
 tools/create_keystore.sh     # 只需运行一次：生成 keystore/ 和 band/sign/（不会覆盖已有签名）
-tools/build_release.sh       # 两端单元测试 + 构建，产物输出到 out/
+tools/build_release.sh       # 下载 SDK + 两端单元测试 + 构建，产物输出到 out/
 ```
+
+小米穿戴 SDK（`xms-wearable-lib_1.4_release.aar`）没有放进仓库。`tools/fetch_xms_sdk.sh` 会从小米官方的 Vela 示例包下载它并校验 SHA-256，`build_release.sh` 会自动调用。
 
 依赖：JDK 17、Android SDK 36、Node 22.7 及以上、OpenSSL。
 
 开发时可以直接构建 debug 版：
 
 ```bash
+tools/fetch_xms_sdk.sh       # 首次需要
 cd android && ./gradlew :app:testDebugUnitTest :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```

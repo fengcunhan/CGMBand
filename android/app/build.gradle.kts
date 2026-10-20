@@ -15,6 +15,11 @@ val keystoreProps = Properties().apply {
     f.inputStream().use { load(it) }
 }
 
+// Xiaomi's wearable SDK is not committed; tools/fetch_xms_sdk.sh downloads it from Xiaomi.
+if (fileTree("libs") { include("*.aar") }.isEmpty) {
+    throw GradleException("Missing Xiaomi wearable SDK in app/libs — run tools/fetch_xms_sdk.sh first")
+}
+
 android {
     namespace = "com.fch.cgmband"
     compileSdk = 36

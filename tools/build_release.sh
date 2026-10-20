@@ -10,6 +10,8 @@ if [[ ! -f "$ROOT/keystore/keystore.properties" ]]; then
   exit 1
 fi
 
+"$ROOT/tools/fetch_xms_sdk.sh"
+
 echo "==> 手机端：单元测试 + release APK"
 (cd "$ROOT/android" && ./gradlew --quiet :app:testDebugUnitTest :app:assembleRelease)
 
