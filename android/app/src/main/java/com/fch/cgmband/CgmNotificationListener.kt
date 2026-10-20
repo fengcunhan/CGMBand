@@ -45,6 +45,7 @@ class CgmNotificationListener : NotificationListenerService() {
     private fun handle(sbn: StatusBarNotification) {
         val texts = RemoteViewsTextExtractor.extract(this, sbn.notification)
         val reading = NotificationParser.parse(texts, sbn.postTime, ZoneId.systemDefault())
+        reading?.let { ReadingDatabase.get(this).save(it) }
         val message = when {
             reading != null -> ReadingRepository.accept(this, reading)?.also {
                 EventLog.add("新血糖 ${reading.value} ${reading.unit} @${reading.time.ifEmpty { "时间未知" }}", sensitive = true)
@@ -59,12 +60,22 @@ class CgmNotificationListener : NotificationListenerService() {
     }
 
     private fun push(message: String) {
-        BandBridge.send(this, message) { ok -> if (ok) EventLog.add("已推送到手环") }
+        BandBridge.send(this, message) { ok ->
+            if (ok) {
+                SyncStatus.bandSynced()
+                EventLog.add("已推送到手环")
+            }
+        }
     }
 
     private fun resendLatest() {
         val message = ReadingRepository.latestMessage(this) ?: return
-        BandBridge.send(this, message) { ok -> if (ok) EventLog.add("已向手环补发最新读数") }
+        BandBridge.send(this, message) { ok ->
+            if (ok) {
+                SyncStatus.bandSynced()
+                EventLog.add("已向手环补发最新读数")
+            }
+        }
     }
 
     companion object {

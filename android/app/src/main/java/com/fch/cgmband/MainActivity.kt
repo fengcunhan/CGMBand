@@ -2,64 +2,86 @@ package com.fch.cgmband
 
 import android.Manifest
 import android.app.Activity
-import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
+import android.graphics.Typeface
 import android.os.Bundle
-import android.os.PowerManager
-import android.provider.Settings
-import android.widget.Button
-import android.widget.CheckBox
-import android.widget.EditText
+import android.os.Handler
+import android.os.Looper
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.RelativeSizeSpan
+import android.text.style.StyleSpan
+import android.util.TypedValue
+import android.view.View
+import android.view.ViewTreeObserver
+import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
-import com.fch.cgmband.core.AlertThresholds
+import com.fch.cgmband.core.ChartData
+import com.fch.cgmband.core.ChartWindow
+import com.fch.cgmband.core.GlucoseLevel
+import com.fch.cgmband.core.GlucoseReading
+import com.fch.cgmband.core.GlucoseStats
+import com.fch.cgmband.core.ReadingTimeLabel
+import com.fch.cgmband.core.TargetRange
 import com.fch.cgmband.core.arrow
+import java.text.SimpleDateFormat
+import java.time.ZoneId
+import java.util.Date
 import java.util.Locale
 
-/** Setup / status screen: grants, band link, manual push and a live event log. */
+/** Dashboard: latest reading, 4/8/12/24-hour chart with yesterday overlay, and range statistics. */
 class MainActivity : Activity() {
 
-    private lateinit var readingView: TextView
-    private lateinit var readingDetailView: TextView
-    private lateinit var listenerStatusView: TextView
-    private lateinit var bandStatusView: TextView
-    private lateinit var batteryStatusView: TextView
-    private lateinit var alertsEnabledView: CheckBox
-    private lateinit var urgentLowInput: EditText
-    private lateinit var lowInput: EditText
-    private lateinit var highInput: EditText
-    private lateinit var logView: TextView
+    private lateinit var bannerView: TextView
+    private lateinit var timeLabelView: TextView
+    private lateinit var valueView: TextView
+    private lateinit var arrowView: TextView
+    private lateinit var unitView: TextView
+    private lateinit var bandChipView: TextView
+    private lateinit var sensorChipView: TextView
+    private lateinit var tabsView: LinearLayout
+    private lateinit var chartView: GlucoseChartView
 
-    private val refreshReading: () -> Unit = { runOnUiThread(::renderReading) }
-    private val refreshLog: () -> Unit = { runOnUiThread(::renderLog) }
+    private var hours = DisplaySettings.CHART_HOURS.first()
+    private var range = TargetRange()
+    private var chartWindowEnd = 0L
+
+    private val timeFormat = SimpleDateFormat("HH:mm", Locale.US)
+    private val ticker = Handler(Looper.getMainLooper())
+    private val tick = object : Runnable {
+        override fun run() {
+            renderReading()
+            if (ChartWindow.forHours(hours, System.currentTimeMillis(), zone()).end != chartWindowEnd) loadChart()
+            ticker.postDelayed(this, TICK_MS)
+        }
+    }
+
+    private val onNewReading: () -> Unit = {
+        runOnUiThread {
+            renderReading()
+            loadChart()
+        }
+    }
+    private val onBandSynced: () -> Unit = { runOnUiThread(::renderChips) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        readingView = findViewById(R.id.reading)
-        readingDetailView = findViewById(R.id.reading_detail)
-        listenerStatusView = findViewById(R.id.listener_status)
-        bandStatusView = findViewById(R.id.band_status)
-        batteryStatusView = findViewById(R.id.battery_status)
-        alertsEnabledView = findViewById(R.id.alerts_enabled)
-        urgentLowInput = findViewById(R.id.threshold_urgent_low)
-        lowInput = findViewById(R.id.threshold_low)
-        highInput = findViewById(R.id.threshold_high)
-        renderAlertSettings()
-        logView = findViewById(R.id.log)
+        bannerView = findViewById(R.id.setup_banner)
+        timeLabelView = findViewById(R.id.time_label)
+        valueView = findViewById(R.id.value)
+        arrowView = findViewById(R.id.arrow)
+        unitView = findViewById(R.id.unit)
+        bandChipView = findViewById(R.id.chip_band)
+        sensorChipView = findViewById(R.id.chip_sensor)
+        tabsView = findViewById(R.id.tabs)
+        chartView = findViewById(R.id.chart)
 
-        onClick(R.id.btn_notification_access, ::openNotificationAccess)
-        onClick(R.id.btn_refresh_band, ::renderBandStatus)
-        onClick(R.id.btn_request_permission, ::requestBandPermission)
-        onClick(R.id.btn_launch_band_app, ::launchBandApp)
-        onClick(R.id.btn_push_now, ::pushNow)
-        onClick(R.id.btn_app_settings, ::openAppSettings)
-        onClick(R.id.btn_battery, ::requestIgnoreBatteryOptimizations)
-        onClick(R.id.btn_save_alerts, ::saveAlertSettings)
-        onClick(R.id.btn_test_alert, ::sendTestAlert)
+        findViewById<View>(R.id.btn_settings).setOnClickListener { openSettings() }
+        bannerView.setOnClickListener { openSettings() }
+        buildTabs()
 
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
@@ -68,173 +90,188 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        ReadingRepository.observe(refreshReading)
-        EventLog.observe(refreshLog)
+        hours = DisplaySettings.chartHours(this)
+        range = DisplaySettings.targetRange(this)
+        ReadingRepository.observe(onNewReading)
+        SyncStatus.observe(onBandSynced)
         KeepAliveService.start(this)
-        renderListenerStatus()
-        renderBatteryStatus()
+
+        bannerView.visibility = if (SetupChecks.isListenerEnabled(this)) View.GONE else View.VISIBLE
+        renderTabs()
         renderReading()
-        renderLog()
-        renderBandStatus()
+        loadChart()
+        ticker.postDelayed(tick, TICK_MS)
     }
 
     override fun onPause() {
-        ReadingRepository.stopObserving(refreshReading)
-        EventLog.stopObserving(refreshLog)
+        ticker.removeCallbacks(tick)
+        ReadingRepository.stopObserving(onNewReading)
+        SyncStatus.stopObserving(onBandSynced)
         super.onPause()
     }
 
-    private fun onClick(id: Int, action: () -> Unit) {
-        findViewById<Button>(id).setOnClickListener { action() }
-    }
+    // ---- latest reading ------------------------------------------------------------------
 
     private fun renderReading() {
         val state = ReadingRepository.state
         val latest = state.latest
+        val now = System.currentTimeMillis()
         if (latest == null) {
-            readingView.text = getString(R.string.no_reading)
-            readingDetailView.text = getString(R.string.waiting_detail)
-            return
+            timeLabelView.text = getString(R.string.waiting_for_data)
+            valueView.text = getString(R.string.no_reading)
+            valueView.setTextColor(getColor(R.color.text_secondary))
+            arrowView.text = ""
+            unitView.text = ""
+        } else {
+            timeLabelView.text = ReadingTimeLabel.format(latest.readingAt, now, zone())
+            valueView.text = latest.value
+            valueView.setTextColor(getColor(valueColor(latest, now)))
+            arrowView.text = state.trend.arrow
+            unitView.text = latest.unit
         }
-        val trend = state.trend
-        val delta = state.delta
-        val disconnected = if (latest.connected) "" else " " + getString(R.string.sensor_disconnected)
-        readingView.text = "${latest.value} ${trend.arrow}"
-        readingDetailView.text = getString(
-            R.string.reading_detail,
-            latest.unit,
-            if (latest.readingAt == null) getString(R.string.time_unknown) else latest.time,
-            trend.name,
-            delta?.let { "%+.1f".format(it) } ?: "-",
-        ) + disconnected
+        renderChips()
     }
 
-    private fun renderAlertSettings() {
-        val settings = AlertMonitor.settings(this)
-        alertsEnabledView.isChecked = settings.enabled
-        urgentLowInput.setText(formatThreshold(settings.thresholds.urgentLow))
-        lowInput.setText(formatThreshold(settings.thresholds.low))
-        highInput.setText(formatThreshold(settings.thresholds.high))
-    }
-
-    private fun saveAlertSettings() {
-        val thresholds = AlertThresholds.of(
-            urgentLowInput.text.toString().toDoubleOrNull() ?: -1.0,
-            lowInput.text.toString().toDoubleOrNull() ?: -1.0,
-            highInput.text.toString().toDoubleOrNull() ?: -1.0,
-        )
-        if (thresholds == null) {
-            toast(R.string.toast_alerts_invalid)
-            return
+    /** Stale, untimed or disconnected readings are greyed out so they are never mistaken for live data. */
+    private fun valueColor(reading: GlucoseReading, now: Long): Int {
+        val readingAt = reading.readingAt
+        if (readingAt == null || now - readingAt > STALE_MS || !reading.connected) return R.color.level_stale
+        return when (range.classify(reading.mmol)) {
+            GlucoseLevel.LOW -> R.color.level_low
+            GlucoseLevel.HIGH -> R.color.level_high
+            GlucoseLevel.IN_RANGE -> R.color.level_in_range
+            GlucoseLevel.UNKNOWN -> R.color.text_primary
         }
-        AlertMonitor.saveSettings(this, AlertMonitor.Settings(alertsEnabledView.isChecked, thresholds))
-        toast(R.string.toast_alerts_saved)
     }
 
-    private fun sendTestAlert() {
-        AlertMonitor.sendTest(this) { ok -> toast(if (ok) R.string.toast_sent else R.string.toast_send_failed) }
+    private fun renderChips() {
+        val syncedAt = SyncStatus.lastBandSyncAt
+        bandChipView.text = if (syncedAt == null) {
+            getString(R.string.chip_band_waiting)
+        } else {
+            getString(R.string.chip_band_synced, timeFormat.format(Date(syncedAt)))
+        }
+        val sensorLost = ReadingRepository.state.latest?.connected == false
+        sensorChipView.text = getString(if (sensorLost) R.string.chip_sensor_lost else R.string.chip_sensor_ok)
+        sensorChipView.setTextColor(getColor(if (sensorLost) R.color.level_low else R.color.text_secondary))
     }
 
-    private fun formatThreshold(value: Double) = String.format(Locale.US, "%.1f", value)
+    // ---- chart span tabs -----------------------------------------------------------------
 
-    private fun renderBatteryStatus() {
-        val unrestricted = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
-        batteryStatusView.text = getString(if (unrestricted) R.string.battery_ok else R.string.battery_restricted)
-    }
-
-    private fun requestIgnoreBatteryOptimizations() {
-        val request = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.fromParts("package", packageName, null))
-        runCatching { startActivity(request) }
-            .onFailure { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
-    }
-
-    private fun renderListenerStatus() {
-        val cgmInstalled = isInstalled(CgmNotificationListener.CGM_PACKAGE)
-        val listenerText = getString(if (isListenerEnabled()) R.string.listener_on else R.string.listener_off)
-        listenerStatusView.text = if (cgmInstalled) listenerText else "$listenerText\n${getString(R.string.cgm_missing)}"
-    }
-
-    private fun renderBandStatus() {
-        bandStatusView.text = getString(R.string.band_checking)
-        BandBridge.status(this) { status ->
-            runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
-                val node = status.node
-                bandStatusView.text = if (node == null) {
-                    getString(R.string.band_none)
-                } else {
-                    getString(
-                        R.string.band_status,
-                        node.name ?: node.id,
-                        label(status.permissionGranted, R.string.granted, R.string.not_granted),
-                        label(status.appInstalled, R.string.installed, R.string.not_installed),
-                        label(status.notifyGranted, R.string.granted, R.string.not_granted),
-                    )
-                }
+    private fun buildTabs() {
+        DisplaySettings.CHART_HOURS.forEach { h ->
+            val tab = TextView(this, null, 0, R.style.SegmentItem).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+                text = getString(R.string.chart_hours, h)
+                tag = h
+                setOnClickListener { selectHours(h) }
             }
+            tabsView.addView(tab)
         }
     }
 
-    private fun renderLog() {
-        logView.text = EventLog.entries.joinToString("\n")
+    private fun selectHours(selected: Int) {
+        if (selected == hours) return
+        hours = selected
+        DisplaySettings.saveChartHours(this, selected)
+        renderTabs()
+        loadChart()
     }
 
-    private fun requestBandPermission() {
-        BandBridge.requestPermission(this) { ok ->
-            toast(if (ok) R.string.toast_permission_ok else R.string.toast_permission_failed)
-            renderBandStatus()
+    private fun renderTabs() {
+        (0 until tabsView.childCount).map { tabsView.getChildAt(it) as TextView }.forEach { tab ->
+            val selected = tab.tag == hours
+            tab.setBackgroundResource(if (selected) R.drawable.bg_segment_selected else 0)
+            tab.setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
+            tab.setTextColor(getColor(if (selected) R.color.text_primary else R.color.text_secondary))
         }
     }
 
-    private fun launchBandApp() {
-        BandBridge.launchBandApp(this) { ok -> if (!ok) toast(R.string.toast_launch_failed) }
+    // ---- chart + statistics ---------------------------------------------------------------
+
+    private fun loadChart() {
+        val window = ChartWindow.forHours(hours, System.currentTimeMillis(), zone())
+        chartWindowEnd = window.end
+        val requestedHours = hours
+        ReadingDatabase.get(this).load(window.start - DAY_MS, window.end) { points ->
+            if (isDestroyed || requestedHours != hours) return@load
+            val data = ChartData.build(points, window)
+            chartView.setData(data, range)
+            renderStats(GlucoseStats.compute(data.today, range))
+        }
     }
 
-    private fun pushNow() {
-        val message = ReadingRepository.latestMessage(this)
-        if (message == null) {
-            toast(R.string.toast_no_reading)
+    private fun renderStats(stats: GlucoseStats?) {
+        val tir = findViewById<TextView>(R.id.stat_tir_value)
+        val swing = findViewById<TextView>(R.id.stat_swing_value)
+        val highLabel = findViewById<TextView>(R.id.stat_high_label)
+        val high = findViewById<TextView>(R.id.stat_high_value)
+        val lowLabel = findViewById<TextView>(R.id.stat_low_label)
+        val low = findViewById<TextView>(R.id.stat_low_value)
+        val values = listOf(tir, swing, high, low)
+        values.forEach {
+            it.setAutoSizeTextTypeUniformWithConfiguration(
+                STAT_MIN_SP, STAT_MAX_SP, 1, TypedValue.COMPLEX_UNIT_SP,
+            )
+        }
+        if (stats == null) {
+            values.forEach { it.text = getString(R.string.stat_empty) }
+            highLabel.text = getString(R.string.stat_highest_plain)
+            lowLabel.text = getString(R.string.stat_lowest_plain)
+            equalizeTextSize(values)
             return
         }
-        BandBridge.send(this, message) { ok -> toast(if (ok) R.string.toast_sent else R.string.toast_send_failed) }
+        tir.text = numberWithUnit(String.format(Locale.US, "%.1f", stats.timeInRangePercent), getString(R.string.unit_percent))
+        swing.text = numberWithUnit(format(stats.maxSwing), MMOL)
+        highLabel.text = getString(R.string.stat_highest, timeFormat.format(Date(stats.highest.at)))
+        high.text = numberWithUnit(format(stats.highest.mmol), MMOL)
+        lowLabel.text = getString(R.string.stat_lowest, timeFormat.format(Date(stats.lowest.at)))
+        low.text = numberWithUnit(format(stats.lowest.mmol), MMOL)
+        equalizeTextSize(values)
     }
 
-    private fun openNotificationAccess() {
-        val component = ComponentName(this, CgmNotificationListener::class.java)
-        val detail = Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
-            .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, component.flattenToString())
-        val fallback = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-        runCatching { startActivity(detail) }.onFailure { startActivity(fallback) }
+    /**
+     * Auto-size fits each value separately; once that layout pass is done, pin all four to the
+     * smallest size so the row reads evenly (the cancelled draw is redone with the final sizes).
+     */
+    private fun equalizeTextSize(views: List<TextView>) {
+        val anchor = views.first()
+        anchor.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                anchor.viewTreeObserver.removeOnPreDrawListener(this)
+                val smallest = views.minOf { it.textSize }
+                views.forEach {
+                    it.setAutoSizeTextTypeWithDefaults(TextView.AUTO_SIZE_TEXT_TYPE_NONE)
+                    it.setTextSize(TypedValue.COMPLEX_UNIT_PX, smallest)
+                }
+                return false
+            }
+        })
     }
 
-    private fun openAppSettings() {
-        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
-    }
+    /** Big bold number followed by a small regular unit, as in the iCan statistics row. */
+    private fun numberWithUnit(number: String, unit: String): CharSequence =
+        SpannableStringBuilder(number).apply {
+            setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            val start = length
+            append(" ").append(unit)
+            setSpan(RelativeSizeSpan(UNIT_SCALE), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
 
-    private fun isListenerEnabled(): Boolean {
-        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners").orEmpty()
-        val component = ComponentName(this, CgmNotificationListener::class.java)
-        return enabled.split(':').any { ComponentName.unflattenFromString(it) == component }
-    }
+    private fun format(value: Double) = String.format(Locale.US, "%.1f", value)
 
-    private fun isInstalled(packageName: String): Boolean = try {
-        packageManager.getPackageInfo(packageName, 0)
-        true
-    } catch (e: PackageManager.NameNotFoundException) {
-        false
-    }
+    private fun openSettings() = startActivity(Intent(this, SettingsActivity::class.java))
 
-    private fun label(value: Boolean?, yes: Int, no: Int): String = when (value) {
-        true -> getString(yes)
-        false -> getString(no)
-        null -> getString(R.string.unknown)
-    }
-
-    private fun toast(resId: Int) = runOnUiThread {
-        if (!isDestroyed) Toast.makeText(this, resId, Toast.LENGTH_SHORT).show()
-    }
+    private fun zone(): ZoneId = ZoneId.systemDefault()
 
     companion object {
         private const val REQUEST_NOTIFICATIONS = 1
+        private const val TICK_MS = 30_000L
+        private const val STALE_MS = 10 * 60_000L
+        private const val DAY_MS = 24 * 60 * 60_000L
+        private const val UNIT_SCALE = 0.55f
+        private const val STAT_MIN_SP = 12
+        private const val STAT_MAX_SP = 24
+        private const val MMOL = "mmol/L"
     }
 }

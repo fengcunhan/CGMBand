@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="page_bg">#0F1115</color>
+    <color name="card_bg">#1A1D23</color>
+    <color name="text_primary">#F3F4F6</color>
+    <color name="text_secondary">#9CA3AF</color>
+    <color name="chip_bg">#262A31</color>
+    <color name="segment_bg">#262A31</color>
+    <color name="segment_selected">#3A3F48</color>
+    <color name="banner_bg">#3A2A12</color>
+    <color name="banner_text">#F6C177</color>
+
+    <color name="chart_grid">#2A2E35</color>
+    <color name="chart_target_band">#1C2626</color>
+    <color name="chart_today">#E5E7EB</color>
+    <color name="chart_yesterday">#4B5563</color>
+</resources>
