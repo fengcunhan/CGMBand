@@ -18,18 +18,27 @@ class SettingsSections(private val container: LinearLayout) {
     private val context: Context = container.context
     private val inflater = LayoutInflater.from(context)
 
-    fun section(title: String, footer: String? = null, rows: Section.() -> Unit) {
+    /** Adds a titled card; keep the returned [Section] to rebuild rows that change at runtime. */
+    fun section(title: String, footer: String? = null, rows: Section.() -> Unit): Section {
         val view = inflater.inflate(R.layout.item_setting_section, container, false)
         view.findViewById<TextView>(R.id.section_title).text = title
         view.findViewById<TextView>(R.id.section_footer).apply {
             text = footer.orEmpty()
             visibility = if (footer == null) View.GONE else View.VISIBLE
         }
-        Section(view.findViewById(R.id.section_rows)).rows()
+        val section = Section(view.findViewById(R.id.section_rows))
+        section.rows()
         container.addView(view)
+        return section
     }
 
     inner class Section(private val card: LinearLayout) {
+
+        /** Replaces every row of this card. */
+        fun rebuild(rows: Section.() -> Unit) {
+            card.removeAllViews()
+            rows()
+        }
 
         /** A row with a right-hand value; a chevron is shown only when the row does something. */
         fun row(title: String, subtitle: String? = null, onClick: (() -> Unit)? = null): Row {

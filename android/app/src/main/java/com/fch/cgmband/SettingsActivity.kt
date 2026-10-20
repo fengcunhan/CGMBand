@@ -30,6 +30,9 @@ class SettingsActivity : Activity() {
     private lateinit var thresholdsRow: SettingsSections.Row
     private lateinit var batteryRow: SettingsSections.Row
     private lateinit var logRow: SettingsSections.Row
+    private lateinit var desktopSection: SettingsSections.Section
+
+    private val refreshDesktop: () -> Unit = { runOnUiThread(::renderDesktop) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,6 +49,16 @@ class SettingsActivity : Activity() {
         renderThresholds()
         renderBattery()
         logRow.setValue(getString(R.string.log_count, EventLog.entries.size))
+        DesktopLink.start(this)
+        DesktopLink.observe(refreshDesktop)
+        DesktopLink.pairingPrompt = ::showPairingPrompt
+        renderDesktop()
+    }
+
+    override fun onPause() {
+        DesktopLink.stopObserving(refreshDesktop)
+        DesktopLink.pairingPrompt = null
+        super.onPause()
     }
 
     private fun buildSections(sections: SettingsSections) {
@@ -59,6 +72,7 @@ class SettingsActivity : Activity() {
             row(getString(R.string.row_launch_band_app), onClick = ::launchBandApp)
             row(getString(R.string.row_push_now), onClick = ::pushNow)
         }
+        desktopSection = sections.section(getString(R.string.section_desktop), getString(R.string.footer_desktop)) {}
         sections.section(getString(R.string.section_display), getString(R.string.footer_target)) {
             targetRow = row(getString(R.string.row_target_range), onClick = ::editTargetRange)
         }
@@ -114,6 +128,79 @@ class SettingsActivity : Activity() {
                 bandRow.setSubtitle(if (ready) getString(R.string.band_all_ok) else problems.joinToString(" · "))
             }
         }
+    }
+
+    /** Rows depend on what DesktopLink currently sees, so the whole card is rebuilt on every change. */
+    private fun renderDesktop() {
+        val status = DesktopLink.status
+        val foundIds = status.found.mapNotNull { it.id }.toSet()
+        val trustedIds = status.trusted.map { it.id }.toSet()
+        desktopSection.rebuild {
+            switchRow(
+                getString(R.string.row_desktop_enabled),
+                getString(R.string.row_desktop_enabled_sub),
+                status.enabled,
+                DesktopLink::setEnabled,
+            )
+            row(getString(R.string.row_desktop_status)).setValue(desktopStatusText(status), desktopStatusColor(status))
+            status.trusted.forEach { mac ->
+                val needsPairing = mac.id in status.needsPairing
+                val online = mac.id in foundIds
+                val subtitle = when {
+                    needsPairing -> getString(R.string.desktop_needs_pairing)
+                    online -> getString(R.string.desktop_trusted_online)
+                    else -> getString(R.string.desktop_trusted_offline)
+                }
+                row(mac.name, subtitle) { confirmForget(mac, status) }
+            }
+            status.found.filter { it.id !in trustedIds }.forEach { mac ->
+                row(getString(R.string.desktop_pair, mac.serviceName), getString(R.string.desktop_pair_sub)) {
+                    DesktopLink.pair(mac.serviceName)
+                }
+            }
+        }
+    }
+
+    private fun desktopStatusText(status: DesktopLink.Status): String = when {
+        !status.enabled -> getString(R.string.desktop_off)
+        status.connectedMac != null -> getString(R.string.desktop_connected, status.connectedMac)
+        status.connectingMac != null -> getString(R.string.desktop_connecting)
+        !status.onWifi -> getString(R.string.desktop_no_wifi)
+        else -> getString(R.string.desktop_searching)
+    }
+
+    private fun desktopStatusColor(status: DesktopLink.Status): Int =
+        if (status.enabled && status.connectedMac != null) R.color.level_in_range else R.color.text_secondary
+
+    private fun confirmForget(mac: DesktopStore.TrustedMac, status: DesktopLink.Status) {
+        val reachable = status.found.firstOrNull { it.id == mac.id }
+        val builder = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.desktop_forget_title, mac.name))
+            .setPositiveButton(R.string.desktop_forget) { _, _ -> DesktopLink.forget(mac.id) }
+            .setNegativeButton(R.string.cancel, null)
+        if (mac.id in status.needsPairing && reachable != null) {
+            builder.setNeutralButton(R.string.desktop_repair) { _, _ -> DesktopLink.pair(reachable.serviceName) }
+        }
+        builder.show()
+    }
+
+    /** Pairing code dialog; leaving it without an answer counts as "no". */
+    private fun showPairingPrompt(macName: String, code: String, answer: (Boolean) -> Unit) {
+        if (isDestroyed) {
+            answer(false)
+            return
+        }
+        var answered = false
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.desktop_pairing_title, macName))
+            .setMessage(getString(R.string.desktop_pairing_message, code))
+            .setPositiveButton(R.string.desktop_pairing_confirm) { _, _ ->
+                answered = true
+                answer(true)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .setOnDismissListener { if (!answered) answer(false) }
+            .show()
     }
 
     private fun renderTargetRange() {

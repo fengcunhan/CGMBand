@@ -63,4 +63,6 @@ android {
 dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
     testImplementation("junit:junit:4.13.2")
+    // Android's org.json is a stub in JVM unit tests; use the real one there.
+    testImplementation("org.json:json:20240303")
 }

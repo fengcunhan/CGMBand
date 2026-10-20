@@ -20,6 +20,7 @@ class CgmNotificationListener : NotificationListenerService() {
         EventLog.add("通知监听已启动")
         KeepAliveService.start(this)
         BandBridge.start(this) { resendLatest() }
+        DesktopLink.start(this)
         val active = runCatching { activeNotifications }.getOrNull().orEmpty()
         active.filter(::isCgmReading).sortedBy { it.postTime }.forEach(::handle)
     }

@@ -112,6 +112,7 @@ class MainActivity : Activity() {
         ReadingRepository.observe(onNewReading)
         SyncStatus.observe(onBandSynced)
         KeepAliveService.start(this)
+        DesktopLink.start(this)
 
         bannerView.visibility = if (SetupChecks.isListenerEnabled(this)) View.GONE else View.VISIBLE
         renderTabs()

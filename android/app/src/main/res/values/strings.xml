@@ -58,6 +58,29 @@
     <string name="row_launch_band_app">在手环上打开血糖</string>
     <string name="row_push_now">立即推送最新血糖</string>
 
+    <!-- Settings: Mac desktop app -->
+    <string name="section_desktop">Mac 桌面端</string>
+    <string name="footer_desktop">需要在 Mac 上运行「血糖监测」应用。首次配对时手机和 Mac 会显示同一个 6 位配对码，两边确认一致后才互相信任；之后在同一 Wi-Fi 下自动连接，数据全程加密。</string>
+    <string name="row_desktop_enabled">同步到 Mac</string>
+    <string name="row_desktop_enabled_sub">同一 Wi-Fi 下自动推送到已配对的 Mac</string>
+    <string name="row_desktop_status">连接状态</string>
+    <string name="desktop_connected">已连接 %s</string>
+    <string name="desktop_connecting">正在连接…</string>
+    <string name="desktop_no_wifi">未连接 Wi-Fi</string>
+    <string name="desktop_searching">正在搜索 Mac…</string>
+    <string name="desktop_off">已关闭</string>
+    <string name="desktop_pair">配对「%s」</string>
+    <string name="desktop_pair_sub">在当前 Wi-Fi 上发现，尚未配对</string>
+    <string name="desktop_trusted_online">已配对 · 在线</string>
+    <string name="desktop_trusted_offline">已配对 · 不在当前网络</string>
+    <string name="desktop_needs_pairing">需要重新配对</string>
+    <string name="desktop_forget_title">取消与「%s」的配对？</string>
+    <string name="desktop_forget">取消配对</string>
+    <string name="desktop_repair">重新配对</string>
+    <string name="desktop_pairing_title">与「%s」配对</string>
+    <string name="desktop_pairing_message">请确认 Mac 上显示的配对码与下面一致：\n\n%s</string>
+    <string name="desktop_pairing_confirm">一致，配对</string>
+
     <!-- Settings: display -->
     <string name="section_display">显示</string>
     <string name="row_target_range">目标范围</string>
