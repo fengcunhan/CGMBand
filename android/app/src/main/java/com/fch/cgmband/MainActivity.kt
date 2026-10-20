@@ -19,9 +19,12 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.fch.cgmband.core.ChartData
 import com.fch.cgmband.core.ChartWindow
+import com.fch.cgmband.core.DemoData
 import com.fch.cgmband.core.GlucoseLevel
+import com.fch.cgmband.core.GlucosePoint
 import com.fch.cgmband.core.GlucoseReading
 import com.fch.cgmband.core.GlucoseStats
+import com.fch.cgmband.core.ReadingState
 import com.fch.cgmband.core.ReadingTimeLabel
 import com.fch.cgmband.core.TargetRange
 import com.fch.cgmband.core.arrow
@@ -67,6 +70,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DemoMode.handle(this, intent)
         setContentView(R.layout.activity_main)
 
         bannerView = findViewById(R.id.setup_banner)
@@ -86,6 +90,11 @@ class MainActivity : Activity() {
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        DemoMode.handle(this, intent)
     }
 
     override fun onResume() {
@@ -112,8 +121,15 @@ class MainActivity : Activity() {
 
     // ---- latest reading ------------------------------------------------------------------
 
+    /** Demo data replaces real data on screen only; see [DemoMode]. */
+    private fun demoPoints(): List<GlucosePoint>? =
+        if (DemoMode.active) DemoData.points(System.currentTimeMillis(), zone()) else null
+
+    private fun displayedState(): ReadingState =
+        demoPoints()?.let { DemoData.state(it, zone()) } ?: ReadingRepository.state
+
     private fun renderReading() {
-        val state = ReadingRepository.state
+        val state = displayedState()
         val latest = state.latest
         val now = System.currentTimeMillis()
         if (latest == null) {
@@ -145,13 +161,13 @@ class MainActivity : Activity() {
     }
 
     private fun renderChips() {
-        val syncedAt = SyncStatus.lastBandSyncAt
+        val syncedAt = if (DemoMode.active) displayedState().latest?.readingAt else SyncStatus.lastBandSyncAt
         bandChipView.text = if (syncedAt == null) {
             getString(R.string.chip_band_waiting)
         } else {
             getString(R.string.chip_band_synced, timeFormat.format(Date(syncedAt)))
         }
-        val sensorLost = ReadingRepository.state.latest?.connected == false
+        val sensorLost = displayedState().latest?.connected == false
         sensorChipView.text = getString(if (sensorLost) R.string.chip_sensor_lost else R.string.chip_sensor_ok)
         sensorChipView.setTextColor(getColor(if (sensorLost) R.color.level_low else R.color.text_secondary))
     }
@@ -192,13 +208,21 @@ class MainActivity : Activity() {
     private fun loadChart() {
         val window = ChartWindow.forHours(hours, System.currentTimeMillis(), zone())
         chartWindowEnd = window.end
+        val demo = demoPoints()
+        if (demo != null) {
+            showChart(ChartData.build(demo, window))
+            return
+        }
         val requestedHours = hours
         ReadingDatabase.get(this).load(window.start - DAY_MS, window.end) { points ->
             if (isDestroyed || requestedHours != hours) return@load
-            val data = ChartData.build(points, window)
-            chartView.setData(data, range)
-            renderStats(GlucoseStats.compute(data.today, range))
+            showChart(ChartData.build(points, window))
         }
+    }
+
+    private fun showChart(data: ChartData) {
+        chartView.setData(data, range)
+        renderStats(GlucoseStats.compute(data.today, range))
     }
 
     private fun renderStats(stats: GlucoseStats?) {
