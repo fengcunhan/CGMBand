@@ -13,6 +13,17 @@
 - **手环应用「血糖」**：抬腕打开就能看到当前血糖、趋势箭头和几分钟前测的；数据过期或传感器断开时会变灰。
 - **高低血糖提醒**：血糖越界时手环弹通知并震动。持续没恢复会按间隔重复提醒，手环上的应用不用开着。
 
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/dashboard-4h.png" width="240" alt="手机主页：4 小时曲线"><br>手机主页 · 4 小时</td>
+    <td align="center"><img src="docs/images/dashboard-24h.png" width="240" alt="手机主页：24 小时曲线"><br>手机主页 · 24 小时</td>
+    <td align="center"><img src="docs/images/settings.png" width="240" alt="设置页"><br>设置页</td>
+    <td align="center"><img src="docs/images/band.jpg" width="200" alt="小米手环 9 Pro 上的血糖应用"><br>手环「血糖」应用</td>
+  </tr>
+</table>
+
+> 手机截图中的血糖是 App 调试版内置的演示数据，不是真实记录；手环图是实拍照片，经 AI 去模糊、校正透视处理。
+
 它的工作方式：
 
 ```
@@ -230,6 +241,15 @@ tools/build_release.sh       # 下载 SDK + 两端单元测试 + 构建，产物
 tools/fetch_xms_sdk.sh       # 首次需要
 cd android && ./gradlew :app:testDebugUnitTest :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+### 截图用的演示模式
+
+调试版（debug）App 内置演示数据，只替换主页显示，不写数据库、不推送到手环，高低血糖提醒仍按真实读数工作，10 分钟后自动关闭：
+
+```bash
+adb shell am start -n com.fch.cgmband/.MainActivity --ez demo true    # 开启
+adb shell am start -n com.fch.cgmband/.MainActivity --ez demo false   # 关闭
 ```
 
 ### 关键约束
