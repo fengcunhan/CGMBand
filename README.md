@@ -23,7 +23,18 @@
   </tr>
 </table>
 
-> 手机截图中的血糖是 App 调试版内置的演示数据，不是真实记录；手环图是实拍照片，经 AI 去模糊、校正透视处理。
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/mac-dashboard-4h.png" width="280" alt="Mac 主窗口：4 小时曲线"><br>Mac 主窗口 · 4 小时</td>
+    <td align="center"><img src="docs/images/mac-dashboard-dark.png" width="280" alt="Mac 主窗口：深色模式"><br>深色模式</td>
+    <td align="center"><img src="docs/images/mac-dashboard-24h.png" width="280" alt="Mac 主窗口：24 小时曲线"><br>24 小时</td>
+  </tr>
+  <tr>
+    <td colspan="3" align="center"><img src="docs/images/mac-menubar.png" width="220" alt="Mac 菜单栏血糖"><br>Mac 菜单栏（浅色 / 深色菜单栏）</td>
+  </tr>
+</table>
+
+> 手机和 Mac 截图中的血糖都是演示数据，不是真实记录：手机用调试版内置的演示模式，Mac 用 `macos/tools/render_screenshots.sh` 以应用自身的界面离线渲染。手环图是实拍照片，经 AI 去模糊、校正透视处理。
 
 它的工作方式：
 
@@ -275,7 +286,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ### 截图用的演示模式
 
-调试版（debug）App 内置演示数据，只替换主页显示，不写数据库、不推送到手环，高低血糖提醒仍按真实读数工作，10 分钟后自动关闭：
+Mac 端截图：`macos/tools/render_screenshots.sh` 用应用自己的界面代码和合成的两天演示数据离线渲染（不启动应用、不联网、不读写真实历史），输出到 `docs/images/mac-*.png`。界面改动后重新运行即可更新截图。
+
+手机端：调试版（debug）App 内置演示数据，只替换主页显示，不写数据库、不推送到手环，高低血糖提醒仍按真实读数工作，10 分钟后自动关闭：
 
 ```bash
 adb shell am start -n com.fch.cgmband/.MainActivity --ez demo true    # 开启
