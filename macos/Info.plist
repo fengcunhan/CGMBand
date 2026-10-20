@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>血糖监测</string>
+  <key>CFBundleDisplayName</key><string>血糖监测</string>
+  <key>CFBundleIdentifier</key><string>local.cgm.monitor</string>
+  <key>CFBundleVersion</key><string>1.0</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleExecutable</key><string>CGMMonitor</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>NSLocalNetworkUsageDescription</key><string>通过本地网络（Wi-Fi）接收手机「手环血糖」推送的实时血糖，并在菜单栏显示</string>
+  <key>NSBonjourServices</key><array><string>_cgmband._tcp</string></array>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>LSApplicationCategoryType</key><string>public.app-category.healthcare-fitness</string>
+</dict>
+</plist>
