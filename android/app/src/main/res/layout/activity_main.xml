@@ -138,7 +138,18 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
                 android:gravity="center_vertical"
+                android:minHeight="28dp"
                 android:orientation="horizontal">
+
+                <!-- time + values appear while the chart cursor is shown -->
+                <TextView
+                    android:id="@+id/legend_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="16dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="16sp"
+                    android:visibility="gone" />
 
                 <View
                     android:layout_width="18dp"
@@ -149,6 +160,10 @@
                     style="@style/LegendLabel"
                     android:text="@string/legend_today" />
 
+                <TextView
+                    android:id="@+id/legend_today_value"
+                    style="@style/LegendValue" />
+
                 <View
                     android:layout_width="18dp"
                     android:layout_height="3dp"
@@ -158,6 +173,10 @@
                 <TextView
                     style="@style/LegendLabel"
                     android:text="@string/legend_yesterday" />
+
+                <TextView
+                    android:id="@+id/legend_yesterday_value"
+                    style="@style/LegendValue" />
             </LinearLayout>
 
             <com.fch.cgmband.GlucoseChartView

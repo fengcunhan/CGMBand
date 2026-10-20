@@ -19,6 +19,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.fch.cgmband.core.ChartData
 import com.fch.cgmband.core.ChartWindow
+import com.fch.cgmband.core.CursorReadout
 import com.fch.cgmband.core.DemoData
 import com.fch.cgmband.core.GlucoseLevel
 import com.fch.cgmband.core.GlucosePoint
@@ -45,6 +46,9 @@ class MainActivity : Activity() {
     private lateinit var sensorChipView: TextView
     private lateinit var tabsView: LinearLayout
     private lateinit var chartView: GlucoseChartView
+    private lateinit var legendTimeView: TextView
+    private lateinit var legendTodayView: TextView
+    private lateinit var legendYesterdayView: TextView
 
     private var hours = DisplaySettings.CHART_HOURS.first()
     private var range = TargetRange()
@@ -82,6 +86,10 @@ class MainActivity : Activity() {
         sensorChipView = findViewById(R.id.chip_sensor)
         tabsView = findViewById(R.id.tabs)
         chartView = findViewById(R.id.chart)
+        legendTimeView = findViewById(R.id.legend_time)
+        legendTodayView = findViewById(R.id.legend_today_value)
+        legendYesterdayView = findViewById(R.id.legend_yesterday_value)
+        chartView.onCursorChanged = ::renderLegend
 
         findViewById<View>(R.id.btn_settings).setOnClickListener { openSettings() }
         bannerView.setOnClickListener { openSettings() }
@@ -223,6 +231,16 @@ class MainActivity : Activity() {
     private fun showChart(data: ChartData) {
         chartView.setData(data, range)
         renderStats(GlucoseStats.compute(data.today, range))
+    }
+
+    /** While the chart cursor is shown, the legend reads "12:27 — 今日 6.3 — 昨日 5.9". */
+    private fun renderLegend(readout: CursorReadout?) {
+        val visibility = if (readout == null) View.GONE else View.VISIBLE
+        listOf(legendTimeView, legendTodayView, legendYesterdayView).forEach { it.visibility = visibility }
+        if (readout == null) return
+        legendTimeView.text = timeFormat.format(Date(readout.at))
+        legendTodayView.text = readout.today?.let { format(it.mmol) } ?: getString(R.string.stat_empty)
+        legendYesterdayView.text = readout.yesterday?.let { format(it.mmol) } ?: getString(R.string.stat_empty)
     }
 
     private fun renderStats(stats: GlucoseStats?) {

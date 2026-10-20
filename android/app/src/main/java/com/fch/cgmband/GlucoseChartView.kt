@@ -1,5 +1,6 @@
 package com.fch.cgmband
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -7,18 +8,24 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.util.TypedValue
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
+import com.fch.cgmband.core.ChartCursor
 import com.fch.cgmband.core.ChartData
+import com.fch.cgmband.core.CursorReadout
 import com.fch.cgmband.core.GlucosePoint
 import com.fch.cgmband.core.TargetRange
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 
 /**
  * Glucose line chart in the style of the iCan app: grey yesterday line, dark today line
  * that turns orange above and red below the target range, shaded target band, and the
- * range limits labelled on the right edge.
+ * range limits labelled on the right edge. Touching the chart shows a cursor that can be
+ * dragged sideways; [onCursorChanged] reports what it points at (null when it hides).
  */
 class GlucoseChartView @JvmOverloads constructor(
     context: Context,
@@ -27,6 +34,16 @@ class GlucoseChartView @JvmOverloads constructor(
 
     private var data: ChartData? = null
     private var range: TargetRange = TargetRange()
+    private var cursor: CursorReadout? = null
+
+    /** Called with the cursor readout while it is shown, and with null when it hides. */
+    var onCursorChanged: ((CursorReadout?) -> Unit)? = null
+
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var downX = 0f
+    private var downY = 0f
+    private var draggingSideways = false
+    private val hideCursor = Runnable { setCursor(null) }
 
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.US)
     private val plot = RectF()
@@ -42,11 +59,61 @@ class GlucoseChartView @JvmOverloads constructor(
     private val lowLabelPaint = textPaint(R.color.level_low, 13f)
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val emptyPaint = textPaint(R.color.text_secondary, 14f).apply { textAlign = Paint.Align.CENTER }
+    private val cursorPaint = strokePaint(R.color.text_secondary, 1f)
+    private val markerFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = color(R.color.card_bg) }
+    private val markerRingPaint = strokePaint(R.color.chart_today, 2.5f)
+    private val yesterdayMarkerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = color(R.color.chart_yesterday) }
 
     fun setData(data: ChartData, range: TargetRange) {
         this.data = data
         this.range = range
+        // New readings or another span: keep the cursor where it was, re-read against the new data.
+        cursor?.let { setCursor(ChartCursor.readout(data, it.at)) } ?: invalidate()
+    }
+
+    @SuppressLint("ClickableViewAccessibility") // the cursor is a visual aid; values stay readable without it
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        val chart = data ?: return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = event.x
+                downY = event.y
+                draggingSideways = false
+                removeCallbacks(hideCursor)
+                setCursor(ChartCursor.readout(chart, timeAt(event.x, chart)))
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = abs(event.x - downX)
+                val dy = abs(event.y - downY)
+                // Claim the gesture only once it is clearly horizontal, so the page still scrolls vertically.
+                if (!draggingSideways && dx > touchSlop && dx > dy) {
+                    draggingSideways = true
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                }
+                setCursor(ChartCursor.readout(chart, timeAt(event.x, chart)))
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                parent?.requestDisallowInterceptTouchEvent(false)
+                postDelayed(hideCursor, CURSOR_HOLD_MS)
+            }
+        }
+        return true
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(hideCursor)
+        super.onDetachedFromWindow()
+    }
+
+    private fun setCursor(readout: CursorReadout?) {
+        cursor = readout
         invalidate()
+        onCursorChanged?.invoke(readout)
+    }
+
+    private fun timeAt(x: Float, chart: ChartData): Long {
+        val fraction = ((x - plot.left) / plot.width()).coerceIn(0f, 1f)
+        return chart.window.start + (fraction * (chart.window.end - chart.window.start)).toLong()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -64,6 +131,18 @@ class GlucoseChartView @JvmOverloads constructor(
         }
         drawSeries(canvas, chart, chart.yesterday, yesterdayPaint)
         drawToday(canvas, chart)
+        cursor?.let { drawCursor(canvas, chart, it) }
+    }
+
+    private fun drawCursor(canvas: Canvas, chart: ChartData, readout: CursorReadout) {
+        val x = xOf(readout.at, chart)
+        canvas.drawLine(x, plot.top, x, plot.bottom, cursorPaint)
+        readout.yesterday?.let { canvas.drawCircle(x, yOf(it.mmol, chart), dp(3.5f), yesterdayMarkerPaint) }
+        readout.today?.let {
+            val y = yOf(it.mmol, chart)
+            canvas.drawCircle(x, y, dp(5f), markerFillPaint)
+            canvas.drawCircle(x, y, dp(5f), markerRingPaint)
+        }
     }
 
     private fun drawGrid(canvas: Canvas, chart: ChartData) {
@@ -156,5 +235,6 @@ class GlucoseChartView @JvmOverloads constructor(
 
     private companion object {
         const val Y_STEP = 3.0
+        const val CURSOR_HOLD_MS = 8_000L
     }
 }
