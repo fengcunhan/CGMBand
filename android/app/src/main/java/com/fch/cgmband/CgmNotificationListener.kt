@@ -60,22 +60,11 @@ class CgmNotificationListener : NotificationListenerService() {
     }
 
     private fun push(message: String) {
-        BandBridge.send(this, message) { ok ->
-            if (ok) {
-                SyncStatus.bandSynced()
-                EventLog.add("已推送到手环")
-            }
-        }
+        BandSync.pushReading(this, message) { ok -> if (ok) EventLog.add("已推送到手环") }
     }
 
     private fun resendLatest() {
-        val message = ReadingRepository.latestMessage(this) ?: return
-        BandBridge.send(this, message) { ok ->
-            if (ok) {
-                SyncStatus.bandSynced()
-                EventLog.add("已向手环补发最新读数")
-            }
-        }
+        BandSync.pushLatest(this) { ok -> if (ok) EventLog.add("已向手环补发最新读数") }
     }
 
     companion object {

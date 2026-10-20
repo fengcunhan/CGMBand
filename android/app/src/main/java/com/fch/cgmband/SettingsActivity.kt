@@ -141,6 +141,7 @@ class SettingsActivity : Activity() {
         ) { (low, high) ->
             val updated = TargetRange.of(low ?: -1.0, high ?: -1.0) ?: return@editNumbers getString(R.string.toast_target_invalid)
             DisplaySettings.saveTargetRange(this, updated)
+            BandSync.pushHistory(this) // the band colours its chart and value with this range
             renderTargetRange()
             null
         }
@@ -186,15 +187,11 @@ class SettingsActivity : Activity() {
     }
 
     private fun pushNow() {
-        val message = ReadingRepository.latestMessage(this)
-        if (message == null) {
+        if (ReadingRepository.latestMessage(this) == null) {
             toast(R.string.toast_no_reading)
             return
         }
-        BandBridge.send(this, message) { ok ->
-            if (ok) SyncStatus.bandSynced()
-            toast(if (ok) R.string.toast_sent else R.string.toast_send_failed)
-        }
+        BandSync.pushLatest(this) { ok -> toast(if (ok) R.string.toast_sent else R.string.toast_send_failed) }
     }
 
     private fun openNotificationAccess() {
