@@ -218,7 +218,7 @@ tools/create_keystore.sh     # 只需运行一次：生成 keystore/ 和 band/si
 tools/build_release.sh       # 两端单元测试 + 构建，产物输出到 out/
 ```
 
-依赖：JDK 17、Android SDK 36、Node 18 及以上、OpenSSL。
+依赖：JDK 17、Android SDK 36、Node 22.7 及以上、OpenSSL。
 
 开发时可以直接构建 debug 版：
 
