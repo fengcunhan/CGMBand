@@ -109,6 +109,38 @@ class DashboardModelTest {
     }
 
     @Test
+    fun `fingerstick results are kept for today's window only and count toward the y axis`() {
+        val window = ChartWindow.forHours(4, at("2026-10-20T10:24:00"), zone)
+        fun stick(text: String, mmol: Double?, flag: MeterFlag = MeterFlag.NONE) =
+            Fingerstick("AA:BB", MeterRecord(1, at(text), mmol, null, flag), null)
+        val inside = stick("2026-10-20T09:30:00", 16.1)
+        val fingersticks = listOf(
+            inside,
+            stick("2026-10-20T06:00:00", 5.0), // before the window
+            stick("2026-10-19T09:30:00", 20.0), // yesterday: never shifted onto today
+            stick("2026-10-20T09:40:00", null, MeterFlag.HIGH), // HI without a value cannot be drawn
+        )
+
+        val data = ChartData.build(listOf(point("2026-10-20T08:00:00", 6.0)), window, fingersticks)
+
+        assertEquals(listOf(inside), data.fingersticks)
+        assertEquals(18.0, data.yMax, 1e-9)
+        assertEquals(emptyList<Fingerstick>(), ChartData.build(emptyList(), window).fingersticks)
+    }
+
+    @Test
+    fun `retagging a fingerstick updates only that result on the chart`() {
+        val window = ChartWindow.forHours(4, at("2026-10-20T10:24:00"), zone)
+        fun stick(seq: Int, text: String) = Fingerstick("AA:BB", MeterRecord(seq, at(text), 6.0, null, MeterFlag.NONE), null)
+        val data = ChartData.build(emptyList(), window, listOf(stick(1, "2026-10-20T08:00:00"), stick(2, "2026-10-20T09:00:00")))
+
+        val retagged = data.withTag("AA:BB", 2, FingerstickTag.BEDTIME)
+
+        assertEquals(listOf(null, FingerstickTag.BEDTIME), retagged.fingersticks.map { it.tag })
+        assertEquals(data.fingersticks.map { it.tag }, retagged.withTag("AA:BB", 2, null).fingersticks.map { it.tag })
+    }
+
+    @Test
     fun `lines break across gaps longer than fifteen minutes`() {
         val points = listOf(
             point("2026-10-20T08:00:00", 6.0),

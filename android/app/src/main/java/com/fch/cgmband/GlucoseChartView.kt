@@ -24,7 +24,7 @@ import kotlin.math.abs
 /**
  * Glucose line chart in the style of the iCan app: grey yesterday line, dark today line
  * that turns orange above and red below the target range, shaded target band, and the
- * range limits labelled on the right edge. Touching the chart shows a cursor that can be
+ * range limits labelled on the right edge. Fingerstick results are hollow red rings on top. Touching the chart shows a cursor that can be
  * dragged sideways; [onCursorChanged] reports what it points at (null when it hides).
  */
 class GlucoseChartView @JvmOverloads constructor(
@@ -63,12 +63,22 @@ class GlucoseChartView @JvmOverloads constructor(
     private val markerFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = color(R.color.card_bg) }
     private val markerRingPaint = strokePaint(R.color.chart_today, 2.5f)
     private val yesterdayMarkerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = color(R.color.chart_yesterday) }
+    private val fingerstickPaint = strokePaint(R.color.chart_fingerstick, 2.5f)
 
     fun setData(data: ChartData, range: TargetRange) {
         this.data = data
         this.range = range
         // New readings or another span: keep the cursor where it was, re-read against the new data.
         cursor?.let { setCursor(ChartCursor.readout(data, it.at)) } ?: invalidate()
+    }
+
+    /** Shows the cursor at [at] as if touched there, e.g. to show a fingerstick's new tag. */
+    fun showCursor(at: Long) {
+        val chart = data ?: return
+        if (at !in chart.window.start..chart.window.end) return // e.g. the hour rolled over meanwhile
+        removeCallbacks(hideCursor)
+        setCursor(ChartCursor.readout(chart, at))
+        postDelayed(hideCursor, CURSOR_HOLD_MS)
     }
 
     @SuppressLint("ClickableViewAccessibility") // the cursor is a visual aid; values stay readable without it
@@ -125,13 +135,25 @@ class GlucoseChartView @JvmOverloads constructor(
         drawTargetBand(canvas, chart)
         drawTimeAxis(canvas, chart)
 
-        if (chart.today.isEmpty() && chart.yesterday.isEmpty()) {
+        if (chart.today.isEmpty() && chart.yesterday.isEmpty() && chart.fingersticks.isEmpty()) {
             canvas.drawText(context.getString(R.string.chart_empty), plot.centerX(), plot.centerY(), emptyPaint)
             return
         }
         drawSeries(canvas, chart, chart.yesterday, yesterdayPaint)
         drawToday(canvas, chart)
         cursor?.let { drawCursor(canvas, chart, it) }
+        drawFingersticks(canvas, chart) // last, so the cursor's CGM marker never hides a fingerstick
+    }
+
+    /** Hollow ring filled with the card colour, so it stays readable where it sits on the CGM line. */
+    private fun drawFingersticks(canvas: Canvas, chart: ChartData) {
+        chart.fingersticks.forEach { stick ->
+            val mmol = stick.record.mmol ?: return@forEach
+            val x = xOf(stick.at, chart)
+            val y = yOf(mmol, chart)
+            canvas.drawCircle(x, y, dp(4.5f), markerFillPaint)
+            canvas.drawCircle(x, y, dp(4.5f), fingerstickPaint)
+        }
     }
 
     private fun drawCursor(canvas: Canvas, chart: ChartData, readout: CursorReadout) {

@@ -15,6 +15,10 @@ object DemoData {
     private const val CADENCE_MS = 3 * 60_000L
     private const val SPAN_MS = 49 * 60 * 60_000L
     private const val BASELINE = 5.6
+    private const val FINGERSTICK_OFFSET = 0.4
+
+    /** Device of demo fingersticks, which exist only on screen and must never be tagged. */
+    const val DEVICE = "demo"
 
     /** Meal start (minute of day), peak height (mmol/L) for today and yesterday. */
     private data class Meal(val startMinute: Double, val today: Double, val yesterday: Double)
@@ -38,6 +42,25 @@ object DemoData {
                 GlucosePoint(at, roundToTenth(glucoseAt(at, minuteOfDay, isToday)))
             }
             .toList()
+    }
+
+    /** Fingerstick checks taken today (minute of day, tag); only those already in the past are shown. */
+    private val FINGERSTICKS = listOf(
+        7 * 60 + 10 to FingerstickTag.FASTING,
+        8 * 60 + 30 to FingerstickTag.AFTER_MEAL_60,
+        14 * 60 + 10 to FingerstickTag.AFTER_MEAL_120,
+        21 * 60 + 50 to FingerstickTag.BEDTIME,
+    )
+
+    /** Fingerstick results a little below the CGM line, as fingersticks often read. */
+    fun fingersticks(now: Long, zone: ZoneId): List<Fingerstick> {
+        val midnight = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().atStartOfDay(zone)
+        return FINGERSTICKS.mapIndexedNotNull { index, (minute, tag) ->
+            val at = midnight.plusMinutes(minute.toLong()).toInstant().toEpochMilli()
+            if (at > now) return@mapIndexedNotNull null
+            val mmol = roundToTenth(glucoseAt(at, minute.toDouble(), isToday = true) - FINGERSTICK_OFFSET)
+            Fingerstick(DEVICE, MeterRecord(index + 1, at, mmol, null, MeterFlag.NONE), tag)
+        }
     }
 
     /** Readings for the last few points fed through [ReadingState], so trend/delta/message are real. */

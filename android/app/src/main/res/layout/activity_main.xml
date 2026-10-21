@@ -134,6 +134,7 @@
 
             <!-- legend -->
             <LinearLayout
+                android:id="@+id/legend"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
@@ -164,19 +165,55 @@
                     android:id="@+id/legend_today_value"
                     style="@style/LegendValue" />
 
-                <View
-                    android:layout_width="18dp"
-                    android:layout_height="3dp"
+                <!-- dropped while the cursor shows a fingerstick and the row would not fit -->
+                <LinearLayout
+                    android:id="@+id/legend_yesterday"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:layout_marginStart="20dp"
-                    android:background="@color/chart_yesterday" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-                <TextView
-                    style="@style/LegendLabel"
-                    android:text="@string/legend_yesterday" />
+                    <View
+                        android:layout_width="18dp"
+                        android:layout_height="3dp"
+                        android:background="@color/chart_yesterday" />
 
-                <TextView
-                    android:id="@+id/legend_yesterday_value"
-                    style="@style/LegendValue" />
+                    <TextView
+                        style="@style/LegendLabel"
+                        android:text="@string/legend_yesterday" />
+
+                    <TextView
+                        android:id="@+id/legend_yesterday_value"
+                        style="@style/LegendValue" />
+                </LinearLayout>
+
+                <!-- "• 指尖血" key; "• 空腹 4.4" (tap to change the tag) while the cursor is on one -->
+                <LinearLayout
+                    android:id="@+id/legend_fingerstick"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="20dp"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <View
+                        android:layout_width="8dp"
+                        android:layout_height="8dp"
+                        android:background="@drawable/dot_fingerstick" />
+
+                    <TextView
+                        android:id="@+id/legend_fingerstick_label"
+                        style="@style/LegendLabel"
+                        android:maxLines="1"
+                        android:text="@string/legend_fingerstick" />
+
+                    <TextView
+                        android:id="@+id/legend_fingerstick_value"
+                        style="@style/LegendValue" />
+                </LinearLayout>
             </LinearLayout>
 
             <com.fch.cgmband.GlucoseChartView

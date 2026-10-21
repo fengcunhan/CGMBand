@@ -14,4 +14,5 @@
     <color name="chart_target_band">#1C2626</color>
     <color name="chart_today">#E5E7EB</color>
     <color name="chart_yesterday">#4B5563</color>
+    <color name="chart_fingerstick">#F87171</color>
 </resources>

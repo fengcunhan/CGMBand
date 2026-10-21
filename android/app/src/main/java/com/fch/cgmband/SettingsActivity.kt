@@ -20,7 +20,7 @@ import com.fch.cgmband.core.AlertThresholds
 import com.fch.cgmband.core.TargetRange
 import java.util.Locale
 
-/** Settings grouped into cards: data source, band, display, alerts, background running, diagnostics. */
+/** Settings grouped into cards: data source, fingerstick meter, band, Mac, display, alerts, background running, diagnostics. */
 class SettingsActivity : Activity() {
 
     private lateinit var listenerRow: SettingsSections.Row
@@ -31,6 +31,7 @@ class SettingsActivity : Activity() {
     private lateinit var batteryRow: SettingsSections.Row
     private lateinit var logRow: SettingsSections.Row
     private lateinit var desktopSection: SettingsSections.Section
+    private val meter = MeterSettings(this)
 
     private val refreshDesktop: () -> Unit = { runOnUiThread(::renderDesktop) }
 
@@ -53,12 +54,19 @@ class SettingsActivity : Activity() {
         DesktopLink.observe(refreshDesktop)
         DesktopLink.pairingPrompt = ::showPairingPrompt
         renderDesktop()
+        meter.onResume()
     }
 
     override fun onPause() {
         DesktopLink.stopObserving(refreshDesktop)
         DesktopLink.pairingPrompt = null
+        meter.onPause()
         super.onPause()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        meter.onRequestPermissionsResult(requestCode, grantResults)
     }
 
     private fun buildSections(sections: SettingsSections) {
@@ -66,6 +74,7 @@ class SettingsActivity : Activity() {
             listenerRow = row(getString(R.string.row_listener), getString(R.string.row_listener_sub), ::openNotificationAccess)
             cgmRow = row(getString(R.string.row_cgm_app))
         }
+        meter.build(sections)
         sections.section(getString(R.string.section_band), getString(R.string.footer_band)) {
             bandRow = row(getString(R.string.row_band), getString(R.string.band_checking), ::renderBand)
             row(getString(R.string.row_band_permission), getString(R.string.row_band_permission_sub), ::requestBandPermission)

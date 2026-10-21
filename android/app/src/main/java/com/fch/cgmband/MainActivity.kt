@@ -21,6 +21,7 @@ import com.fch.cgmband.core.ChartData
 import com.fch.cgmband.core.ChartWindow
 import com.fch.cgmband.core.CursorReadout
 import com.fch.cgmband.core.DemoData
+import com.fch.cgmband.core.Fingerstick
 import com.fch.cgmband.core.GlucoseLevel
 import com.fch.cgmband.core.GlucosePoint
 import com.fch.cgmband.core.GlucoseReading
@@ -49,10 +50,20 @@ class MainActivity : Activity() {
     private lateinit var legendTimeView: TextView
     private lateinit var legendTodayView: TextView
     private lateinit var legendYesterdayView: TextView
+    private lateinit var legendView: View
+    private lateinit var legendYesterdayGroup: View
+    private lateinit var legendFingerstickView: View
+    private lateinit var legendFingerstickLabel: TextView
+    private lateinit var legendFingerstickValue: TextView
 
     private var hours = DisplaySettings.CHART_HOURS.first()
     private var range = TargetRange()
     private var chartWindowEnd = 0L
+    private var hasFingersticks = false
+    private var chart: ChartData? = null
+
+    /** Bumped by every chart load, so a slower earlier load (or one overtaken by demo data) is dropped. */
+    private var chartLoad = 0
 
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.US)
     private val ticker = Handler(Looper.getMainLooper())
@@ -89,6 +100,11 @@ class MainActivity : Activity() {
         legendTimeView = findViewById(R.id.legend_time)
         legendTodayView = findViewById(R.id.legend_today_value)
         legendYesterdayView = findViewById(R.id.legend_yesterday_value)
+        legendView = findViewById(R.id.legend)
+        legendYesterdayGroup = findViewById(R.id.legend_yesterday)
+        legendFingerstickView = findViewById(R.id.legend_fingerstick)
+        legendFingerstickLabel = findViewById(R.id.legend_fingerstick_label)
+        legendFingerstickValue = findViewById(R.id.legend_fingerstick_value)
         chartView.onCursorChanged = ::renderLegend
 
         findViewById<View>(R.id.btn_settings).setOnClickListener { openSettings() }
@@ -217,31 +233,86 @@ class MainActivity : Activity() {
     private fun loadChart() {
         val window = ChartWindow.forHours(hours, System.currentTimeMillis(), zone())
         chartWindowEnd = window.end
+        val load = ++chartLoad
         val demo = demoPoints()
         if (demo != null) {
-            showChart(ChartData.build(demo, window))
+            showChart(ChartData.build(demo, window, DemoData.fingersticks(System.currentTimeMillis(), zone())))
             return
         }
-        val requestedHours = hours
         ReadingDatabase.get(this).load(window.start - DAY_MS, window.end) { points ->
-            if (isDestroyed || requestedHours != hours) return@load
-            showChart(ChartData.build(points, window))
+            if (isDestroyed || load != chartLoad) return@load
+            MeterDatabase.get(this).between(window.start, window.end) { fingersticks ->
+                if (isDestroyed || load != chartLoad) return@between
+                showChart(ChartData.build(points, window, fingersticks))
+            }
         }
     }
 
     private fun showChart(data: ChartData) {
+        chart = data
+        hasFingersticks = data.fingersticks.isNotEmpty()
         chartView.setData(data, range)
         renderStats(GlucoseStats.compute(data.today, range))
+        if (legendTimeView.visibility != View.VISIBLE) renderLegend(null)
     }
 
-    /** While the chart cursor is shown, the legend reads "12:27 — 今日 6.3 — 昨日 5.9". */
+    /**
+     * While the chart cursor is shown, the legend reads "12:27 — 今日 6.3 — 昨日 5.9", plus
+     * "• 空腹 4.4" when the cursor sits on a fingerstick (tap it to change the tag).
+     */
     private fun renderLegend(readout: CursorReadout?) {
         val visibility = if (readout == null) View.GONE else View.VISIBLE
         listOf(legendTimeView, legendTodayView, legendYesterdayView).forEach { it.visibility = visibility }
-        if (readout == null) return
-        legendTimeView.text = timeFormat.format(Date(readout.at))
-        legendTodayView.text = readout.today?.let { format(it.mmol) } ?: getString(R.string.stat_empty)
-        legendYesterdayView.text = readout.yesterday?.let { format(it.mmol) } ?: getString(R.string.stat_empty)
+        renderFingerstickLegend(readout)
+        if (readout != null) {
+            legendTimeView.text = timeFormat.format(Date(readout.at))
+            legendTodayView.text = readout.today?.let { format(it.mmol) } ?: getString(R.string.stat_empty)
+            legendYesterdayView.text = readout.yesterday?.let { format(it.mmol) } ?: getString(R.string.stat_empty)
+        }
+        fitLegend() // after every text is set, so the measurement sees the final widths
+    }
+
+    private fun renderFingerstickLegend(readout: CursorReadout?) {
+        val stick = readout?.fingerstick
+        legendFingerstickView.visibility = if (stick != null || (readout == null && hasFingersticks)) View.VISIBLE else View.GONE
+        legendFingerstickValue.visibility = if (stick != null) View.VISIBLE else View.GONE
+        legendFingerstickLabel.text = stick?.let { FingerstickTags.label(this, it) } ?: getString(R.string.legend_fingerstick)
+        legendFingerstickValue.text = stick?.record?.label
+        legendFingerstickLabel.visibility = View.VISIBLE
+        // Demo results are not in the database, so there is nothing to tag.
+        if (stick != null && stick.device != DemoData.DEVICE) {
+            legendFingerstickView.setOnClickListener { retag(stick) }
+        } else {
+            legendFingerstickView.setOnClickListener(null)
+            legendFingerstickView.isClickable = false
+        }
+    }
+
+    /** Shows the new tag at once (the cursor may have hidden while the dialog was open), then reloads. */
+    private fun retag(stick: Fingerstick) {
+        FingerstickTags.pick(this, stick) { tag ->
+            chart?.let { showChart(it.withTag(stick.device, stick.record.sequence, tag)) }
+            chartView.showCursor(stick.at)
+            loadChart()
+        }
+    }
+
+    /**
+     * Narrow screens and large fonts cannot fit the whole row: drop yesterday, then the cursor
+     * time, then the fingerstick's tag, until it fits; the values themselves always stay.
+     */
+    private fun fitLegend() {
+        legendYesterdayGroup.visibility = View.VISIBLE
+        if (legendView.width <= 0) return // not laid out yet
+        val droppable = listOf(legendYesterdayGroup, legendTimeView, legendFingerstickLabel)
+            .filter { it.visibility == View.VISIBLE }
+        val unbounded = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        for (view in droppable) {
+            legendView.measure(unbounded, unbounded)
+            if (legendView.measuredWidth <= legendView.width) break
+            view.visibility = View.GONE
+        }
+        legendView.requestLayout()
     }
 
     private fun renderStats(stats: GlucoseStats?) {
